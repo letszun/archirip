@@ -22,4 +22,11 @@ window.addEventListener("load", () => {
     settings.dataset.settingsV19 = "1";
     document.body.appendChild(settings);
   }
+
+  if (!document.querySelector('script[data-zoom-v20]')) {
+    const zoom = document.createElement("script");
+    zoom.src = "./zoom-v20.js?v=20";
+    zoom.dataset.zoomV20 = "1";
+    document.body.appendChild(zoom);
+  }
 });
