@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Reading Archive</title>
+  <style>
+    :root {
+      --ink:#111;
+      --muted:#9a9a9a;
+      --line:#ececec;
+      --paper:#fff;
+      font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing:border-box; }
+    html, body { margin:0; width:100%; min-height:100%; background:#fff; color:var(--ink); }
+    body { min-height:100dvh; overflow:hidden; }
+    button, input, textarea { font:inherit; color:inherit; }
+    button { border:0; background:none; padding:0; cursor:pointer; }
+
+    #app {
+      height:100dvh;
+      display:grid;
+      grid-template-rows:64px minmax(0,1fr);
+      background:#fff;
+    }
+
+    header {
+      position:relative;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-bottom:1px solid transparent;
+      z-index:10;
+    }
+    .brand {
+      position:absolute;
+      left:28px;
+      top:50%;
+      transform:translateY(-50%);
+      font-size:10px;
+      font-weight:700;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+    }
+    nav { display:flex; gap:26px; align-items:center; }
+    nav button {
+      color:#aaa;
+      font-size:12px;
+      letter-spacing:-.01em;
+      padding:9px 0;
+    }
+    nav button.active { color:#111; }
+
+    main { position:relative; min-height:0; overflow:hidden; }
+    .view {
+      position:absolute; inset:0;
+      opacity:0; visibility:hidden; pointer-events:none;
+    }
+    .view.active { opacity:1; visibility:visible; pointer-events:auto; }
+
+    /* 3D book */
+    #singleView { background:#fff; }
+    #bookCanvas {
+      width:100%; height:100%; display:block;
+      cursor:grab; touch-action:none; outline:none;
+    }
+    #bookCanvas.dragging { cursor:grabbing; }
+    .hint {
+      position:absolute;
+      left:50%; bottom:24px;
+      transform:translateX(-50%);
+      color:#b1b1b1;
+      font-size:10px;
+      letter-spacing:.02em;
+      pointer-events:none;
+      white-space:nowrap;
+    }
+
+    /* shelf */
+    #shelfView {
+      overflow:auto;
+      padding:50px 26px 40px;
+    }
+    .shelf-wrap {
+      width:min(920px,100%);
+      min-height:100%;
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .shelf {
+      width:100%;
+      min-height:350px;
+      display:flex;
+      align-items:flex-end;
+      justify-content:center;
+      gap:2px;
+      border-bottom:1px solid #d8d8d8;
+      padding:0 18px 12px;
+    }
+    .spine {
+      width:38px;
+      height:310px;
+      border-radius:2px 2px 0 0;
+      position:relative;
+      flex:0 0 auto;
+      transition:transform .16s ease;
+    }
+    .spine:hover, .spine:focus-visible { transform:translateY(-7px); outline:none; }
+    .spine span {
+      position:absolute;
+      top:18px; left:50%;
+      transform:translateX(-50%);
+      writing-mode:vertical-rl;
+      text-orientation:mixed;
+      color:#fff;
+      font-size:10px;
+      letter-spacing:.03em;
+      max-height:250px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    /* detail */
+    #detailView { overflow:auto; background:#fff; }
+    .detail {
+      width:min(680px,calc(100% - 40px));
+      margin:0 auto;
+      padding:44px 0 90px;
+    }
+    .back {
+      color:#888;
+      font-size:11px;
+      margin-bottom:52px;
+      padding:6px 0;
+    }
+    h1 {
+      margin:0 0 56px;
+      font-size:clamp(30px,5vw,46px);
+      line-height:1.08;
+      font-weight:500;
+      letter-spacing:-.045em;
+    }
+    .author {
+      display:block;
+      margin-top:12px;
+      color:#a2a2a2;
+      font-size:12px;
+      font-weight:400;
+      letter-spacing:0;
+    }
+    .field {
+      display:grid;
+      grid-template-columns:105px 1fr;
+      gap:22px;
+      border-top:1px solid var(--line);
+      padding:20px 0;
+    }
+    .field:last-of-type { border-bottom:1px solid var(--line); }
+    label { color:#999; font-size:11px; padding-top:4px; }
+    input, textarea {
+      width:100%;
+      border:0;
+      outline:0;
+      background:transparent;
+      padding:0;
+      font-size:14px;
+      line-height:1.7;
+      border-radius:0;
+    }
+    textarea { resize:vertical; min-height:150px; }
+    .saved {
+      text-align:right;
+      margin-top:12px;
+      font-size:10px;
+      color:#bbb;
+      opacity:0;
+      transition:opacity .15s ease;
+    }
+    .saved.on { opacity:1; }
+
+    @media (max-width:640px) {
+      #app { grid-template-rows:58px minmax(0,1fr); }
+      .brand { left:18px; font-size:9px; }
+      nav { gap:19px; margin-left:auto; margin-right:18px; }
+      .shelf { justify-content:flex-start; overflow-x:auto; }
+      .spine { height:260px; }
+      .field { grid-template-columns:1fr; gap:9px; }
+      .detail { padding-top:34px; }
+      .back { margin-bottom:36px; }
+      h1 { margin-bottom:42px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Archive</div>
+    <nav aria-label="메인 메뉴">
+      <button type="button" data-view="single" class="active">한 권</button>
+      <button type="button" data-view="shelf">책장</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="singleView" class="view active" aria-label="한 권">
+      <canvas id="bookCanvas" aria-label="회전 가능한 3D 책"></canvas>
+      <div class="hint">드래그하여 회전 · 클릭하여 기록 보기</div>
+    </section>
+
+    <section id="shelfView" class="view" aria-label="책장">
+      <div class="shelf-wrap">
+        <div id="shelf" class="shelf"></div>
+      </div>
+    </section>
+
+    <section id="detailView" class="view" aria-label="책 기록">
+      <div class="detail">
+        <button type="button" id="backButton" class="back">← 돌아가기</button>
+        <h1 id="detailTitle"></h1>
+
+        <div class="field">
+          <label for="readDate">읽은 날짜</label>
+          <input id="readDate" type="date" />
+        </div>
+
+        <div class="field">
+          <label for="oneLine">한 줄 평</label>
+          <input id="oneLine" type="text" maxlength="120" placeholder="한 문장" />
+        </div>
+
+        <div class="field">
+          <label for="memo">메모</label>
+          <textarea id="memo" placeholder="기억해둘 것"></textarea>
+        </div>
+        <div id="saved" class="saved">저장됨</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="./model-data.js"></script>
+<script src="./cover-data.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
