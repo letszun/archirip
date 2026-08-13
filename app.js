@@ -2,7 +2,6 @@
   "use strict";
 
   const STORAGE_KEY = "reading-archive-minimal-v5";
-  const COVER_PARTS = new Set(["frontcover", "spine", "backcover"]);
   const DEFAULT_BOOKS = [{
     id:"gatsby",
     title:"The Great Gatsby",
@@ -20,7 +19,7 @@
   const model = window.BOOK_MODEL_DATA;
 
   let books = loadSavedBooks();
-  let activeBookId = books[0]?.id || "gatsby";
+  let activeBookId = books[0]?.id || null;
   let currentView = "single";
   let previousView = "single";
 
@@ -48,7 +47,7 @@
     requestRender();
   };
 
-  if (!ctx || !model?.meshes || !model?.cover) {
+  if (!ctx || !Array.isArray(model?.surfaces) || !model?.cover) {
     showError("모델 데이터를 불러오지 못했습니다.");
     return;
   }
@@ -81,6 +80,7 @@
     $("#closeAdd").addEventListener("click", () => showView("shelf"));
     $("#addForm").addEventListener("submit", addBook);
     $("#coverUpload").addEventListener("change", handleCoverUpload);
+    $("#deleteBook").addEventListener("click", deleteActiveBook);
 
     ["#readDate", "#oneLine", "#memo"].forEach(sel => {
       $(sel).addEventListener("input", saveDetail);
@@ -278,6 +278,25 @@
     }
   }
 
+  function deleteActiveBook(){
+    const book = getBook();
+    if (!book) return;
+
+    if (!window.confirm(`"${book.title}"을(를) 삭제할까요?`)) return;
+
+    const index = books.findIndex(item => item.id === book.id);
+    if (index < 0) return;
+
+    books.splice(index, 1);
+    activeBookId = books[Math.min(index, books.length - 1)]?.id || null;
+
+    persistBooks();
+    buildShelf();
+    loadActiveCover();
+    showView("shelf");
+    requestRender();
+  }
+
   function populateDetail(){
     const b = getBook();
     if (!b) return;
@@ -315,7 +334,7 @@
   function loadSavedBooks(){
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (Array.isArray(saved?.books) && saved.books.length) return saved.books.map(normalizeBook);
+      if (Array.isArray(saved?.books)) return saved.books.map(normalizeBook);
     } catch (_) {}
     return DEFAULT_BOOKS.map(normalizeBook);
   }
@@ -380,91 +399,82 @@
     ctx.fillRect(0,0,w,h);
 
     const camera = makeCamera(w,h);
-    const triangles = [];
+    const items = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const active = getBook();
     const dominant = active?.dominantColor || "#777777";
 
-    for (const mesh of model.meshes) {
-      const transformed = mesh.vertices.map(v => transformVertex(v, camera));
-      const baseHex = COVER_PARTS.has(mesh.name.toLowerCase()) ? dominant : (mesh.color || "#ececec");
-      const base = hexToRgb(baseHex);
-      const meshLight = getMeshLight(mesh.name, camera);
-      const color = rgbCss(base.map(v => clamp(v * meshLight, 0, 255)));
+    for (const surface of model.surfaces) {
+      const pts = surface.vertices.map(v => transformVertex(v, camera));
+      if (pts.length < 3) continue;
 
-      for (const face of mesh.faces) {
-        const a = transformed[face[0]];
-        const b = transformed[face[1]];
-        const c = transformed[face[2]];
-        if (!a || !b || !c) continue;
+      const normal = faceNormal3(pts[0].world, pts[1].world, pts[2].world);
+      if (normal[2] <= 0.001) continue;
 
-        minX = Math.min(minX,a.sx,b.sx,c.sx);
-        minY = Math.min(minY,a.sy,b.sy,c.sy);
-        maxX = Math.max(maxX,a.sx,b.sx,c.sx);
-        maxY = Math.max(maxY,a.sy,b.sy,c.sy);
-
-        triangles.push({
-          pts:[a,b,c],
-          z:(a.world[2]+b.world[2]+c.world[2])/3,
-          color
-        });
-      }
-    }
-
-    triangles.sort((a,b) => a.z - b.z);
-
-    ctx.lineJoin = "round";
-    for (const tri of triangles) {
-      const [a,b,c] = tri.pts;
-      const e0 = expandPoint([a.sx,a.sy],[b.sx,b.sy],[c.sx,c.sy],0.58);
-      const e1 = expandPoint([b.sx,b.sy],[a.sx,a.sy],[c.sx,c.sy],0.58);
-      const e2 = expandPoint([c.sx,c.sy],[a.sx,a.sy],[b.sx,b.sy],0.58);
-      ctx.beginPath();
-      ctx.moveTo(e0[0],e0[1]);
-      ctx.lineTo(e1[0],e1[1]);
-      ctx.lineTo(e2[0],e2[1]);
-      ctx.closePath();
-      ctx.fillStyle = tri.color;
-      ctx.fill();
-    }
-
-    const coverWorld = model.cover.vertices.map(v => transformVertex(v,camera));
-    const coverNormal = faceNormal3(coverWorld[0].world,coverWorld[1].world,coverWorld[2].world);
-    const frontFacing = coverNormal[2] > 0.02;
-
-    if (frontFacing) {
-      for (const p of coverWorld) {
+      for (const p of pts) {
         minX = Math.min(minX,p.sx); minY = Math.min(minY,p.sy);
         maxX = Math.max(maxX,p.sx); maxY = Math.max(maxY,p.sy);
       }
 
-      if (coverReady && coverImage.src === currentCoverSource) drawProjectiveCover(coverWorld,camera);
-      else drawCoverFallback(coverWorld, dominant);
+      const baseHex = surface.role === "dominant" ? dominant : "#f1eee8";
+      const color = shadeSurface(baseHex, normal, surface.role);
+
+      items.push({
+        kind:"solid",
+        pts,
+        z:pts.reduce((sum,p) => sum + p.world[2], 0) / pts.length,
+        color
+      });
+    }
+
+    const coverPts = model.cover.vertices.map(v => transformVertex(v,camera));
+    if (coverPts.length >= 3) {
+      const coverNormal = faceNormal3(coverPts[0].world,coverPts[1].world,coverPts[2].world);
+      if (coverNormal[2] > 0.001) {
+        for (const p of coverPts) {
+          minX = Math.min(minX,p.sx); minY = Math.min(minY,p.sy);
+          maxX = Math.max(maxX,p.sx); maxY = Math.max(maxY,p.sy);
+        }
+        items.push({
+          kind:"cover",
+          pts:coverPts,
+          z:coverPts.reduce((sum,p) => sum + p.world[2], 0) / coverPts.length
+        });
+      }
+    }
+
+    items.sort((a,b) => a.z - b.z);
+
+    for (const item of items) {
+      if (item.kind === "cover") {
+        if (coverReady && coverImage.src === currentCoverSource) {
+          drawProjectiveCover(item.pts,camera);
+        } else {
+          drawCoverFallback(item.pts, dominant);
+        }
+        continue;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(item.pts[0].sx,item.pts[0].sy);
+      for (let i=1;i<item.pts.length;i++) ctx.lineTo(item.pts[i].sx,item.pts[i].sy);
+      ctx.closePath();
+      ctx.fillStyle = item.color;
+      ctx.fill();
     }
 
     if (Number.isFinite(minX)) projectedBounds = {minX,minY,maxX,maxY};
+    else projectedBounds = null;
   }
 
-  function getMeshLight(name, camera){
-    const key = String(name || "").toLowerCase();
-    if (key === "pages") return 0.985;
-
-    let n;
-    if (key === "spine") n = [-1,0,0];
-    else if (key === "backcover") n = [0,0,-1];
-    else n = [0,0,1];
-
-    const rn = rotateNormal(n, camera);
-    const lightDir = normalize3([-0.25,0.58,1]);
-    return clamp(0.86 + 0.14 * Math.abs(dot3(rn, lightDir)), 0.86, 1.0);
-  }
-
-  function rotateNormal(n, cam){
-    const x1 = cam.cyaw*n[0] + cam.syaw*n[2];
-    const z1 = -cam.syaw*n[0] + cam.cyaw*n[2];
-    const y2 = cam.cpitch*n[1] - cam.spitch*z1;
-    const z2 = cam.spitch*n[1] + cam.cpitch*z1;
-    return normalize3([x1,y2,z2]);
+  function shadeSurface(hex, normal, role){
+    const base = hexToRgb(hex);
+    const lightDir = normalize3([-0.3,0.55,1]);
+    const diffuse = Math.max(0, dot3(normalize3(normal), lightDir));
+    const floor = role === "pages" ? 0.91 : 0.82;
+    const range = role === "pages" ? 0.09 : 0.18;
+    const light = floor + range * diffuse;
+    return rgbCss(base.map(v => clamp(v * light, 0, 255)));
   }
 
   function makeCamera(w,h){

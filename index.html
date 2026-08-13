@@ -95,6 +95,12 @@
     label{font-size:11px;color:#999;padding-top:4px}
     input,textarea{width:100%;border:0;outline:0;background:transparent;padding:0;font-size:14px;line-height:1.75;border-radius:0}
     textarea{min-height:180px;resize:vertical}
+    .detail-actions{display:flex;justify-content:flex-end;padding-top:18px}
+    .delete-book{
+      font-size:11px;color:#aaa;padding:8px 0;letter-spacing:.01em;
+      transition:color .16s ease;
+    }
+    .delete-book:hover,.delete-book:focus-visible{color:#222;outline:none}
 
     #addView{overflow:auto;padding:0 20px}
     .add-shell{
@@ -177,6 +183,9 @@
       <div class="field">
         <label for="memo">메모</label>
         <textarea id="memo"></textarea>
+      </div>
+      <div class="detail-actions">
+        <button id="deleteBook" class="delete-book" type="button">삭제</button>
       </div>
     </div>
   </section>
