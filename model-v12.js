@@ -9,9 +9,9 @@ window.BOOK_MODEL_DATA = {
 };
 
 window.addEventListener("load", () => {
-  if (document.querySelector('script[data-catalog-v14]')) return;
+  if (document.querySelector('script[data-catalog-v15]')) return;
   const script = document.createElement("script");
-  script.src = "./catalog-v14.js";
-  script.dataset.catalogV14 = "1";
+  script.src = "./catalog-v15.js";
+  script.dataset.catalogV15 = "1";
   document.body.appendChild(script);
 });
