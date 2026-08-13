@@ -1,421 +1,349 @@
 (() => {
   "use strict";
 
-  const DEFAULT_BOOKS = {
-    books: [{
-      id: "gatsby",
-      title: "The Great Gatsby",
-      author: "F. Scott Fitzgerald",
-      readDate: "",
-      oneLine: "",
-      memo: "",
-      spineColor: "#0b465f"
-    }]
-  };
+  const STORAGE_KEY = "reading-archive-minimal-v3";
+  const DEFAULT_BOOKS = [{
+    id:"gatsby", title:"The Great Gatsby", author:"F. Scott Fitzgerald",
+    readDate:"", oneLine:"", memo:"", spineColor:"#0b465f"
+  }];
 
-  const STORAGE_KEY = "reading-archive-minimal-v2";
-
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => [...document.querySelectorAll(s)];
-
-  const views = {
-    single: $("#singleView"),
-    shelf: $("#shelfView"),
-    detail: $("#detailView")
-  };
-
+  const $ = s => document.querySelector(s);
   const canvas = $("#bookCanvas");
-  const ctx = canvas.getContext("2d", { alpha: false });
-  const navButtons = $$("nav button");
+  const gl = canvas.getContext("webgl", { antialias:true, alpha:false, depth:true }) ||
+             canvas.getContext("experimental-webgl", { antialias:true, alpha:false, depth:true });
 
-  let books = [];
-  let activeBookId = "gatsby";
-  let previousView = "single";
+  let books = loadSavedBooks();
+  let activeBookId = books[0]?.id || "gatsby";
   let currentView = "single";
-  let dpr = 1;
-  let width = 1;
-  let height = 1;
-
-  let yaw = -0.48;
-  let pitch = 0.08;
-  let zoom = 1;
+  let previousView = "single";
+  let yaw = -0.46;
+  let pitch = 0.06;
+  let zoom = 1.0;
   let drag = null;
-  let lastHitTriangles = [];
-  let renderQueued = false;
+  let needsRender = true;
+  let projectedBounds = null;
 
-  const coverImage = new Image();
-  coverImage.decoding = "async";
-  coverImage.src = window.BOOK_COVER_DATA_URL || "";
-  coverImage.onload = queueRender;
+  const model = window.BOOK_MODEL_DATA;
+  const resources = { meshes:[], cover:null, texture:null, program:null };
 
-  init();
+  initUI();
+  if (!gl || !model) {
+    showError(!gl ? "이 브라우저에서 WebGL을 사용할 수 없습니다." : "model-data.js를 찾을 수 없습니다.");
+    return;
+  }
 
-  async function init() {
-    books = await loadBooks();
-    const saved = readSaved();
-    if (saved?.books?.length) books = saved.books;
-    activeBookId = books[0]?.id || "gatsby";
+  try {
+    initGL();
+    resize();
+    requestAnimationFrame(loop);
+  } catch (err) {
+    console.error(err);
+    showError("3D 모델을 초기화하지 못했습니다.");
+  }
+
+  function initUI(){
+    $("#toShelf").addEventListener("click", () => showView("shelf"));
+    $("#toSingle").addEventListener("click", () => showView("single"));
+    $("#backDetail").addEventListener("click", () => showView(previousView));
+    ["#readDate","#oneLine","#memo"].forEach(sel => $(sel).addEventListener("input", saveDetail));
 
     buildShelf();
-    bindUI();
-    resize();
-    queueRender();
-  }
 
-  async function loadBooks() {
-    if (location.protocol !== "file:") {
-      try {
-        const res = await fetch("./books.json", { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.books) && data.books.length) return data.books;
-        }
-      } catch (_) {}
-    }
-    return (typeof structuredClone === "function") ? structuredClone(DEFAULT_BOOKS.books) : JSON.parse(JSON.stringify(DEFAULT_BOOKS.books));
-  }
-
-  function bindUI() {
-    navButtons.forEach(btn => {
-      btn.addEventListener("click", () => showView(btn.dataset.view));
+    canvas.addEventListener("pointerdown", e => {
+      canvas.setPointerCapture?.(e.pointerId);
+      drag = { id:e.pointerId, x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, moved:false };
+      canvas.classList.add("dragging");
     });
-
-    $("#backButton").addEventListener("click", () => showView(previousView));
-
-    ["#readDate", "#oneLine", "#memo"].forEach(sel => {
-      $(sel).addEventListener("input", saveDetail);
+    canvas.addEventListener("pointermove", e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+      if (Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>5) drag.moved=true;
+      yaw += dx*0.008;
+      pitch = clamp(pitch + dy*0.006, -1.05, 1.05);
+      drag.x=e.clientX; drag.y=e.clientY;
+      needsRender=true;
     });
-
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointercancel", endDrag);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    canvas.addEventListener("dblclick", () => {
-      yaw = -0.48; pitch = 0.08; zoom = 1; queueRender();
+    canvas.addEventListener("pointerup", e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const moved=drag.moved;
+      drag=null; canvas.classList.remove("dragging");
+      if (!moved && hitProjectedBook(e.clientX,e.clientY)) showView("detail");
     });
-
+    canvas.addEventListener("pointercancel", () => { drag=null; canvas.classList.remove("dragging"); });
+    canvas.addEventListener("wheel", e => {
+      e.preventDefault();
+      zoom = clamp(zoom * (e.deltaY>0 ? .92 : 1.08), .72, 1.55);
+      needsRender=true;
+    }, {passive:false});
+    canvas.addEventListener("dblclick", () => { yaw=-.46; pitch=.06; zoom=1; needsRender=true; });
     window.addEventListener("resize", resize);
   }
 
-  function buildShelf() {
-    const shelf = $("#shelf");
-    shelf.innerHTML = "";
-    books.forEach(book => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "spine";
-      b.style.background = book.spineColor || "#111";
-      b.setAttribute("aria-label", `${book.title} 열기`);
-
-      const label = document.createElement("span");
-      label.textContent = book.title;
-      b.appendChild(label);
-
-      b.addEventListener("click", () => {
-        activeBookId = book.id;
-        showView("single");
-        queueRender();
-      });
+  function buildShelf(){
+    const shelf=$("#shelf");
+    shelf.innerHTML="";
+    books.forEach((book,i) => {
+      const b=document.createElement("button");
+      b.className="spine"; b.type="button";
+      b.style.background=book.spineColor || "#111";
+      b.style.width=`${32 + (i%4)*3}px`;
+      b.setAttribute("aria-label",`${book.title} 열기`);
+      const s=document.createElement("span"); s.textContent=book.title; b.appendChild(s);
+      b.addEventListener("click",() => { activeBookId=book.id; showView("single"); needsRender=true; });
       shelf.appendChild(b);
     });
   }
 
-  function showView(name) {
-    if (!views[name]) return;
-
-    if (name === "detail") {
-      previousView = currentView === "detail" ? previousView : currentView;
-      populateDetail();
-    } else {
-      currentView = name;
-    }
-
-    Object.entries(views).forEach(([k, el]) => {
-      el.classList.toggle("active", k === name);
-    });
-    navButtons.forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.view === name);
-    });
+  function showView(name){
+    const single=$("#singleView"), shelf=$("#shelfView"), detail=$("#detailView");
+    if (name === "detail") { previousView=currentView; populateDetail(); }
 
     if (name === "single") {
-      currentView = "single";
-      setTimeout(() => { resize(); queueRender(); }, 0);
-    }
-    if (name === "shelf") currentView = "shelf";
-  }
-
-  function populateDetail() {
-    const book = getBook();
-    if (!book) return;
-    $("#detailTitle").innerHTML =
-      escapeHTML(book.title) +
-      `<span class="author">${escapeHTML(book.author || "")}</span>`;
-    $("#readDate").value = book.readDate || "";
-    $("#oneLine").value = book.oneLine || "";
-    $("#memo").value = book.memo || "";
-  }
-
-  function saveDetail() {
-    const book = getBook();
-    if (!book) return;
-    book.readDate = $("#readDate").value;
-    book.oneLine = $("#oneLine").value;
-    book.memo = $("#memo").value;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ books })); } catch (_) {}
-
-    const saved = $("#saved");
-    saved.classList.add("on");
-    clearTimeout(saveDetail.timer);
-    saveDetail.timer = setTimeout(() => saved.classList.remove("on"), 850);
-  }
-
-  function getBook() {
-    return books.find(b => b.id === activeBookId) || books[0];
-  }
-
-  function readSaved() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); }
-    catch (_) { return null; }
-  }
-
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-    width = Math.max(1, rect.width);
-    height = Math.max(1, rect.height);
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    queueRender();
-  }
-
-  function queueRender() {
-    if (renderQueued) return;
-    renderQueued = true;
-    requestAnimationFrame(() => {
-      renderQueued = false;
-      render();
-    });
-  }
-
-  function render() {
-    if (!views.single.classList.contains("active")) return;
-
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-
-    const data = window.BOOK_MODEL_DATA;
-    if (!data) {
-      ctx.fillStyle = "#999";
-      ctx.font = "12px sans-serif";
-      ctx.fillText("model-data.js를 찾을 수 없습니다.", 24, 36);
-      return;
-    }
-
-    const all = [];
-    const hit = [];
-
-    for (const mesh of data.meshes) {
-      const tv = transformVertices(mesh.vertices);
-      for (const f of mesh.faces) {
-        const a = tv[f[0]], b = tv[f[1]], c = tv[f[2]];
-        if (!a.visible || !b.visible || !c.visible) continue;
-        const shade = lightFor(a,b,c);
-        all.push({
-          type:"flat",
-          z:(a.z+b.z+c.z)/3,
-          pts:[a,b,c],
-          color:shadeColor(mesh.color, shade)
-        });
-      }
-    }
-
-    const cv = transformVertices(data.cover.vertices);
-    for (const f of data.cover.faces) {
-      const a = cv[f[0]], b = cv[f[1]], c = cv[f[2]];
-      if (!a.visible || !b.visible || !c.visible) continue;
-      all.push({
-        type:"cover",
-        z:(a.z+b.z+c.z)/3 + 0.0001,
-        pts:[a,b,c],
-        uv:[data.cover.uvs[f[0]], data.cover.uvs[f[1]], data.cover.uvs[f[2]]]
-      });
-    }
-
-    all.sort((p,q) => p.z - q.z);
-
-    for (const tri of all) {
-      const p = tri.pts;
-      if (tri.type === "cover" && coverImage.complete && coverImage.naturalWidth) {
-        drawTexturedTriangle(coverImage, tri.uv, p);
+      single.className="view current";
+      shelf.className="view off-right";
+      detail.className="view off-right";
+      currentView="single"; needsRender=true;
+    } else if (name === "shelf") {
+      single.className="view off-left";
+      shelf.className="view current";
+      detail.className="view off-right";
+      currentView="shelf";
+    } else if (name === "detail") {
+      if (currentView === "shelf") {
+        shelf.className="view off-left";
       } else {
-        ctx.beginPath();
-        ctx.moveTo(p[0].x,p[0].y);
-        ctx.lineTo(p[1].x,p[1].y);
-        ctx.lineTo(p[2].x,p[2].y);
-        ctx.closePath();
-        ctx.fillStyle = tri.type === "cover" ? "#0b465f" : tri.color;
-        ctx.fill();
+        single.className="view off-left";
       }
-      hit.push([p[0],p[1],p[2]]);
+      detail.className="view current";
+      currentView="detail";
     }
-
-    lastHitTriangles = hit;
   }
 
-  function transformVertices(vertices) {
-    const cy = Math.cos(yaw), sy = Math.sin(yaw);
-    const cx = Math.cos(pitch), sx = Math.sin(pitch);
-    const cameraZ = 5.5;
-    const focal = Math.min(width, height) * 1.18 * zoom;
-
-    return vertices.map(v => {
-      const x0 = v[0], y0 = v[1], z0 = v[2];
-
-      const x1 = x0 * cy + z0 * sy;
-      const z1 = -x0 * sy + z0 * cy;
-
-      const y2 = y0 * cx - z1 * sx;
-      const z2 = y0 * sx + z1 * cx;
-
-      const denom = cameraZ - z2;
-      return {
-        X:x1, Y:y2, Z:z2,
-        x:width/2 + x1 * focal / denom,
-        y:height/2 - y2 * focal / denom,
-        z:z2,
-        visible:denom > 0.3
-      };
-    });
+  function populateDetail(){
+    const b=getBook(); if(!b)return;
+    $("#readDate").value=b.readDate||"";
+    $("#oneLine").value=b.oneLine||"";
+    $("#memo").value=b.memo||"";
+  }
+  function saveDetail(){
+    const b=getBook(); if(!b)return;
+    b.readDate=$("#readDate").value;
+    b.oneLine=$("#oneLine").value;
+    b.memo=$("#memo").value;
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({books}))}catch(_){ }
+  }
+  function getBook(){ return books.find(b=>b.id===activeBookId)||books[0]; }
+  function loadSavedBooks(){
+    try{
+      const s=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
+      if(Array.isArray(s?.books)&&s.books.length)return s.books;
+    }catch(_){ }
+    return DEFAULT_BOOKS.map(x=>({...x}));
   }
 
-  function lightFor(a,b,c) {
-    const ux=b.X-a.X, uy=b.Y-a.Y, uz=b.Z-a.Z;
-    const vx=c.X-a.X, vy=c.Y-a.Y, vz=c.Z-a.Z;
-    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
-    const len=Math.hypot(nx,ny,nz)||1;
-    nx/=len; ny/=len; nz/=len;
-    const ll=Math.hypot(.35,.7,1);
-    const dot=Math.abs((nx*.35+ny*.7+nz*1)/ll);
-    return 0.72 + dot * 0.28;
-  }
+  function initGL(){
+    gl.clearColor(1,1,1,1);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.enable(gl.POLYGON_OFFSET_FILL);
 
-  function shadeColor(hex, factor) {
-    const s = hex.replace("#","");
-    const n = parseInt(s.length===3 ? s.split("").map(x=>x+x).join("") : s,16);
-    const r=(n>>16)&255, g=(n>>8)&255, b=n&255;
-    return `rgb(${Math.min(255,Math.round(r*factor))},${Math.min(255,Math.round(g*factor))},${Math.min(255,Math.round(b*factor))})`;
-  }
-
-  function drawTexturedTriangle(img, uv, pts) {
-    const src = uv.map(([u,v]) => ({
-      x:u * img.naturalWidth,
-      y:(1-v) * img.naturalHeight
-    }));
-
-    const m = affine(src, pts);
-    if (!m) return;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    ctx.lineTo(pts[1].x, pts[1].y);
-    ctx.lineTo(pts[2].x, pts[2].y);
-    ctx.closePath();
-    ctx.clip();
-
-    ctx.transform(m.a,m.b,m.c,m.d,m.e,m.f);
-    ctx.drawImage(img,0,0);
-    ctx.restore();
-  }
-
-  function affine(s,d) {
-    const u0=s[0].x, v0=s[0].y, u1=s[1].x, v1=s[1].y, u2=s[2].x, v2=s[2].y;
-    const x0=d[0].x, y0=d[0].y, x1=d[1].x, y1=d[1].y, x2=d[2].x, y2=d[2].y;
-    const den = u0*(v1-v2) + u1*(v2-v0) + u2*(v0-v1);
-    if (Math.abs(den) < 1e-8) return null;
-
-    return {
-      a:(x0*(v1-v2)+x1*(v2-v0)+x2*(v0-v1))/den,
-      b:(y0*(v1-v2)+y1*(v2-v0)+y2*(v0-v1))/den,
-      c:(x0*(u2-u1)+x1*(u0-u2)+x2*(u1-u0))/den,
-      d:(y0*(u2-u1)+y1*(u0-u2)+y2*(u1-u0))/den,
-      e:(x0*(u1*v2-u2*v1)+x1*(u2*v0-u0*v2)+x2*(u0*v1-u1*v0))/den,
-      f:(y0*(u1*v2-u2*v1)+y1*(u2*v0-u0*v2)+y2*(u0*v1-u1*v0))/den
+    const vs=`
+      attribute vec3 aPosition;
+      attribute vec3 aNormal;
+      attribute vec2 aUV;
+      uniform mat4 uMVP;
+      uniform mat4 uModel;
+      varying vec3 vNormal;
+      varying vec2 vUV;
+      void main(){
+        gl_Position=uMVP*vec4(aPosition,1.0);
+        vNormal=mat3(uModel)*aNormal;
+        vUV=aUV;
+      }`;
+    const fs=`
+      precision mediump float;
+      uniform vec3 uColor;
+      uniform sampler2D uTexture;
+      uniform float uUseTexture;
+      varying vec3 vNormal;
+      varying vec2 vUV;
+      void main(){
+        vec3 n=normalize(vNormal);
+        vec3 l=normalize(vec3(-0.25,0.65,1.0));
+        float light=0.76+0.24*abs(dot(n,l));
+        vec4 base = uUseTexture>0.5 ? texture2D(uTexture,vUV) : vec4(uColor,1.0);
+        gl_FragColor=vec4(base.rgb*light,base.a);
+      }`;
+    resources.program=createProgram(vs,fs);
+    gl.useProgram(resources.program);
+    resources.loc={
+      pos:gl.getAttribLocation(resources.program,"aPosition"),
+      normal:gl.getAttribLocation(resources.program,"aNormal"),
+      uv:gl.getAttribLocation(resources.program,"aUV"),
+      mvp:gl.getUniformLocation(resources.program,"uMVP"),
+      model:gl.getUniformLocation(resources.program,"uModel"),
+      color:gl.getUniformLocation(resources.program,"uColor"),
+      useTexture:gl.getUniformLocation(resources.program,"uUseTexture"),
+      tex:gl.getUniformLocation(resources.program,"uTexture")
     };
-  }
 
-  function onPointerDown(e) {
-    canvas.setPointerCapture?.(e.pointerId);
-    drag = { id:e.pointerId, x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, moved:false };
-    canvas.classList.add("dragging");
-  }
-
-  function onPointerMove(e) {
-    if (!drag || drag.id !== e.pointerId) return;
-    const dx = e.clientX - drag.x;
-    const dy = e.clientY - drag.y;
-    if (Math.hypot(e.clientX-drag.sx, e.clientY-drag.sy) > 5) drag.moved = true;
-
-    yaw += dx * 0.008;
-    pitch += dy * 0.006;
-    pitch = Math.max(-1.15, Math.min(1.15, pitch));
-
-    drag.x = e.clientX; drag.y = e.clientY;
-    queueRender();
-  }
-
-  function onPointerUp(e) {
-    if (!drag || drag.id !== e.pointerId) return;
-    const wasMoved = drag.moved;
-    endDrag();
-
-    if (!wasMoved) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      if (hitModel(x,y)) showView("detail");
+    for(const mesh of model.meshes){
+      resources.meshes.push(makeFlatMesh(mesh));
     }
+    resources.cover=makeCoverMesh(model.cover);
+    makeTexture();
   }
 
-  function endDrag() {
-    drag = null;
-    canvas.classList.remove("dragging");
-  }
-
-  function onWheel(e) {
-    e.preventDefault();
-    zoom *= e.deltaY > 0 ? 0.92 : 1.08;
-    zoom = Math.max(0.68, Math.min(1.6, zoom));
-    queueRender();
-  }
-
-  function hitModel(x,y) {
-    for (let i=lastHitTriangles.length-1;i>=0;i--) {
-      if (pointInTriangle(x,y,lastHitTriangles[i])) return true;
+  function makeFlatMesh(mesh){
+    const pos=[], norm=[], uv=[];
+    for(const f of mesh.faces){
+      const a=mesh.vertices[f[0]], b=mesh.vertices[f[1]], c=mesh.vertices[f[2]];
+      const n=faceNormal(a,b,c);
+      for(const idx of f){ pos.push(...mesh.vertices[idx]); norm.push(...n); uv.push(0,0); }
     }
-    return false;
+    return { count:pos.length/3, color:hexToRgb(mesh.color||"#eeeeee"),
+      pos:makeBuffer(pos), normal:makeBuffer(norm), uv:makeBuffer(uv) };
   }
 
-  function pointInTriangle(px,py,t) {
-    const [a,b,c] = t;
-    const s1 = sign(px,py,a.x,a.y,b.x,b.y);
-    const s2 = sign(px,py,b.x,b.y,c.x,c.y);
-    const s3 = sign(px,py,c.x,c.y,a.x,a.y);
-    const neg = s1<0 || s2<0 || s3<0;
-    const pos = s1>0 || s2>0 || s3>0;
-    return !(neg && pos);
+  function makeCoverMesh(cover){
+    const pos=[],norm=[],uv=[];
+    for(const f of cover.faces){
+      const a=cover.vertices[f[0]], b=cover.vertices[f[1]], c=cover.vertices[f[2]];
+      const n=faceNormal(a,b,c);
+      for(const idx of f){ pos.push(...cover.vertices[idx]); norm.push(...n); uv.push(...cover.uvs[idx]); }
+    }
+    return {count:pos.length/3,pos:makeBuffer(pos),normal:makeBuffer(norm),uv:makeBuffer(uv)};
   }
 
-  function sign(px,py,x1,y1,x2,y2) {
-    return (px-x2)*(y1-y2) - (x1-x2)*(py-y2);
+  function makeTexture(){
+    const tex=gl.createTexture(); resources.texture=tex;
+    gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([11,70,95,255]));
+
+    const img=new Image();
+    img.onload=()=>{
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+      needsRender=true;
+    };
+    img.src=window.BOOK_COVER_DATA_URL||"";
   }
 
-  function escapeHTML(s) {
-    return String(s).replace(/[&<>"']/g, ch => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    })[ch]);
+  function loop(){
+    if(needsRender && currentView==="single"){
+      needsRender=false; render();
+    }
+    requestAnimationFrame(loop);
   }
+
+  function render(){
+    gl.viewport(0,0,canvas.width,canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(resources.program);
+
+    const aspect=canvas.width/canvas.height;
+    const proj=perspective(34*Math.PI/180,aspect,.1,100);
+    const view=translate(0,0,-5.65);
+    const scaleValue=zoom;
+    const modelM=multiply(rotateX(pitch),rotateY(yaw));
+    const modelScaled=multiply(modelM,scale(scaleValue,scaleValue,scaleValue));
+    const mv=multiply(view,modelScaled);
+    const mvp=multiply(proj,mv);
+    gl.uniformMatrix4fv(resources.loc.mvp,false,new Float32Array(mvp));
+    gl.uniformMatrix4fv(resources.loc.model,false,new Float32Array(modelScaled));
+
+    gl.uniform1i(resources.loc.tex,0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D,resources.texture);
+
+    gl.disable(gl.CULL_FACE);
+    gl.polygonOffset(0,0);
+    for(const mesh of resources.meshes){
+      bindMesh(mesh);
+      gl.uniform3fv(resources.loc.color,new Float32Array(mesh.color));
+      gl.uniform1f(resources.loc.useTexture,0);
+      gl.drawArrays(gl.TRIANGLES,0,mesh.count);
+    }
+
+    // The cover is rendered with normal GPU perspective interpolation, so there are no diagonal seams.
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
+    gl.frontFace(gl.CCW);
+    gl.polygonOffset(-1,-1);
+    bindMesh(resources.cover);
+    gl.uniform3f(resources.loc.color,1,1,1);
+    gl.uniform1f(resources.loc.useTexture,1);
+    gl.drawArrays(gl.TRIANGLES,0,resources.cover.count);
+    gl.disable(gl.CULL_FACE);
+
+    projectedBounds=projectBookBounds(mvp);
+  }
+
+  function bindMesh(mesh){
+    bindAttrib(resources.loc.pos,mesh.pos,3);
+    bindAttrib(resources.loc.normal,mesh.normal,3);
+    bindAttrib(resources.loc.uv,mesh.uv,2);
+  }
+  function bindAttrib(loc,buffer,size){ gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0); }
+  function makeBuffer(values){ const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(values),gl.STATIC_DRAW);return b; }
+
+  function createProgram(vsSource,fsSource){
+    const vs=compile(gl.VERTEX_SHADER,vsSource), fs=compile(gl.FRAGMENT_SHADER,fsSource);
+    const p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fs); gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+  function compile(type,src){ const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s; }
+
+  function resize(){
+    const r=canvas.getBoundingClientRect();
+    const dpr=Math.min(devicePixelRatio||1,2);
+    const w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
+    if(canvas.width!==w||canvas.height!==h){ canvas.width=w;canvas.height=h;needsRender=true; }
+  }
+
+  function hitProjectedBook(clientX,clientY){
+    if(!projectedBounds)return false;
+    const r=canvas.getBoundingClientRect();
+    const x=(clientX-r.left)*(canvas.width/r.width), y=(clientY-r.top)*(canvas.height/r.height);
+    return x>=projectedBounds.minX-14 && x<=projectedBounds.maxX+14 && y>=projectedBounds.minY-14 && y<=projectedBounds.maxY+14;
+  }
+  function projectBookBounds(mvp){
+    const pts=[];
+    const xs=[-1.08,1.09], ys=[-1.58,1.58], zs=[-.16,.16];
+    for(const x of xs)for(const y of ys)for(const z of zs){
+      const q=transformPoint(mvp,[x,y,z,1]); if(Math.abs(q[3])<1e-6)continue;
+      const nx=q[0]/q[3], ny=q[1]/q[3];
+      pts.push([(nx*.5+.5)*canvas.width,(1-(ny*.5+.5))*canvas.height]);
+    }
+    return {minX:Math.min(...pts.map(p=>p[0])),maxX:Math.max(...pts.map(p=>p[0])),minY:Math.min(...pts.map(p=>p[1])),maxY:Math.max(...pts.map(p=>p[1]))};
+  }
+
+  function faceNormal(a,b,c){
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    let x=uy*vz-uz*vy,y=uz*vx-ux*vz,z=ux*vy-uy*vx;const l=Math.hypot(x,y,z)||1;return[x/l,y/l,z/l];
+  }
+  function hexToRgb(hex){let s=(hex||"#eee").replace("#","");if(s.length===3)s=s.split("").map(c=>c+c).join("");const n=parseInt(s,16);return[((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+  // Column-major matrices for WebGL.
+  function identity(){return[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}
+  function multiply(a,b){const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o}
+  function perspective(fovy,aspect,near,far){const f=1/Math.tan(fovy/2),nf=1/(near-far);return[f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,(2*far*near)*nf,0]}
+  function translate(x,y,z){const m=identity();m[12]=x;m[13]=y;m[14]=z;return m}
+  function scale(x,y,z){const m=identity();m[0]=x;m[5]=y;m[10]=z;return m}
+  function rotateX(a){const c=Math.cos(a),s=Math.sin(a);return[1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]}
+  function rotateY(a){const c=Math.cos(a),s=Math.sin(a);return[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]}
+  function transformPoint(m,v){return[
+    m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+    m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+    m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+    m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]]}
+
+  function showError(msg){const e=$("#webglError");e.textContent=msg;e.classList.add("show")}
 })();
