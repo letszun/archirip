@@ -1,0 +1,16 @@
+{
+  "books": [
+    {
+      "id": "gatsby",
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "pageCount": 180,
+      "currentPage": 0,
+      "readDate": "",
+      "oneLine": "",
+      "notes": [],
+      "dominantColor": "#0b465f",
+      "coverAspect": 0.680952380952381
+    }
+  ]
+}
