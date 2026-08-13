@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Reading Archive</title>
+  <style>
+    :root{
+      --ink:#111;
+      --muted:#8d8d8d;
+      --line:#ececec;
+      font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;background:#fff;color:var(--ink)}
+    body{overflow:hidden}
+    button,input,textarea{font:inherit;color:inherit}
+    button{border:0;background:none;padding:0;cursor:pointer}
+
+    #app{position:relative;width:100%;height:100dvh;overflow:hidden;background:#fff}
+    .view{
+      position:absolute;inset:0;background:#fff;
+      transition:transform .44s cubic-bezier(.22,.78,.25,1),opacity .24s ease;
+      will-change:transform;
+    }
+    .view.off-left{transform:translateX(-100%);pointer-events:none}
+    .view.off-right{transform:translateX(100%);pointer-events:none}
+    .view.current{transform:translateX(0);pointer-events:auto}
+
+    #singleView{display:grid;place-items:center}
+    #bookCanvas{
+      position:absolute;inset:0;width:100%;height:100%;display:block;
+      background:#fff;touch-action:none;cursor:grab;
+    }
+    #bookCanvas.dragging{cursor:grabbing}
+
+    .round-nav{
+      position:absolute;top:50%;width:40px;height:40px;
+      border:1px solid #dedede;border-radius:50%;
+      transform:translateY(-50%);background:rgba(255,255,255,.94);z-index:30;
+      transition:border-color .16s ease,transform .16s ease;
+    }
+    .round-nav:hover{border-color:#aaa}
+    .round-nav:active{transform:translateY(-50%) scale(.94)}
+    .round-nav.right{right:clamp(16px,3vw,42px)}
+    .round-nav.left{left:clamp(16px,3vw,42px)}
+    .round-nav::before,.round-nav::after{
+      content:"";position:absolute;width:8px;height:1px;background:#444;top:50%;left:50%;
+    }
+    .round-nav.right::before{transform:translate(-3px,-3px) rotate(45deg)}
+    .round-nav.right::after{transform:translate(-3px,2px) rotate(-45deg)}
+    .round-nav.left::before{transform:translate(-5px,-3px) rotate(-45deg)}
+    .round-nav.left::after{transform:translate(-5px,2px) rotate(45deg)}
+
+    #shelfView{display:flex;align-items:center;justify-content:center;padding:48px clamp(54px,8vw,110px)}
+    .shelf{
+      width:min(980px,100%);min-height:360px;display:flex;align-items:flex-end;justify-content:center;
+      gap:3px;padding:0 14px 12px;border-bottom:1px solid #d9d9d9;overflow-x:auto;scrollbar-width:none;
+    }
+    .shelf::-webkit-scrollbar{display:none}
+    .spine{
+      position:relative;flex:0 0 auto;width:34px;height:306px;border-radius:2px 2px 0 0;
+      border:1px solid rgba(0,0,0,.08);transition:transform .16s ease;
+    }
+    .spine:hover,.spine:focus-visible{transform:translateY(-7px);outline:none}
+    .spine span{
+      position:absolute;top:17px;left:50%;transform:translateX(-50%);
+      writing-mode:vertical-rl;text-orientation:mixed;color:#fff;
+      font-family:Georgia,"Times New Roman",serif;font-size:11px;letter-spacing:.02em;
+      white-space:nowrap;max-height:246px;overflow:hidden;
+    }
+
+    #detailView{overflow:auto;padding:0 20px}
+    .detail{width:min(620px,100%);margin:0 auto;padding:clamp(78px,12vh,126px) 0 90px}
+    .detail .round-nav{position:fixed;top:32px;transform:none}
+    .detail .round-nav:active{transform:scale(.94)}
+    .field{display:grid;grid-template-columns:108px 1fr;gap:24px;padding:23px 0;border-top:1px solid var(--line)}
+    .field:last-child{border-bottom:1px solid var(--line)}
+    label{font-size:11px;color:#999;padding-top:4px}
+    input,textarea{width:100%;border:0;outline:0;background:transparent;padding:0;font-size:14px;line-height:1.75;border-radius:0}
+    textarea{min-height:180px;resize:vertical}
+
+    #error{
+      display:none;position:absolute;inset:0;place-items:center;padding:32px;
+      text-align:center;font-size:12px;line-height:1.7;color:#888;background:#fff;z-index:50;
+    }
+    #error.show{display:grid}
+
+    @media(max-width:640px){
+      .round-nav{width:38px;height:38px}
+      #shelfView{padding-left:54px;padding-right:54px}
+      .shelf{justify-content:flex-start;min-height:310px}
+      .spine{height:260px}
+      .field{grid-template-columns:1fr;gap:9px}
+      .detail{padding-top:92px}
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <section id="singleView" class="view current" aria-label="책 한 권 보기">
+    <canvas id="bookCanvas" aria-label="회전 가능한 3D 책"></canvas>
+    <button id="toShelf" class="round-nav right" type="button" aria-label="책장으로 이동"></button>
+  </section>
+
+  <section id="shelfView" class="view off-right" aria-label="책장">
+    <button id="toSingle" class="round-nav left" type="button" aria-label="한 권 보기로 이동"></button>
+    <div id="shelf" class="shelf"></div>
+  </section>
+
+  <section id="detailView" class="view off-right" aria-label="책 기록">
+    <div class="detail">
+      <button id="backDetail" class="round-nav left" type="button" aria-label="뒤로"></button>
+      <div class="field">
+        <label for="readDate">읽은 날짜</label>
+        <input id="readDate" type="date" />
+      </div>
+      <div class="field">
+        <label for="oneLine">한 줄 평</label>
+        <input id="oneLine" type="text" maxlength="120" />
+      </div>
+      <div class="field">
+        <label for="memo">메모</label>
+        <textarea id="memo"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <div id="error"></div>
+</div>
+<script src="./model-data.js"></script>
+<script src="./cover-data.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
