@@ -9,9 +9,17 @@ window.BOOK_MODEL_DATA = {
 };
 
 window.addEventListener("load", () => {
-  if (document.querySelector('script[data-catalog-v18]')) return;
-  const script = document.createElement("script");
-  script.src = "./catalog-v18.js";
-  script.dataset.catalogV18 = "1";
-  document.body.appendChild(script);
+  if (!document.querySelector('script[data-catalog-v18]')) {
+    const script = document.createElement("script");
+    script.src = "./catalog-v18.js";
+    script.dataset.catalogV18 = "1";
+    document.body.appendChild(script);
+  }
+
+  if (!document.querySelector('script[data-settings-v19]')) {
+    const settings = document.createElement("script");
+    settings.src = "./settings-v19.js";
+    settings.dataset.settingsV19 = "1";
+    document.body.appendChild(settings);
+  }
 });
