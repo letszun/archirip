@@ -1,0 +1,56 @@
+name: Apply ChatGPT app update
+
+on:
+  push:
+    branches:
+      - chatgpt-v13-temp
+    paths:
+      - 'chatgpt-update.ready'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: chatgpt-v13-temp
+          fetch-depth: 0
+
+      - name: Restore staged files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, shutil
+
+          mapping = {
+              '.chatgpt/index-v13.html.gz.b64': 'index.html',
+              '.chatgpt/app-v13.js.gz.b64': 'app-v13.js',
+              '.chatgpt/model-v13.js.gz.b64': 'model-v13.js',
+              '.chatgpt/books-v13.json.gz.b64': 'books-v13.json',
+          }
+
+          for source, target in mapping.items():
+              encoded = Path(source).read_text(encoding='utf-8').strip()
+              data = gzip.decompress(base64.b64decode(encoded))
+              Path(target).write_bytes(data)
+
+          shutil.copyfile('cover-v12.js', 'cover-v13.js')
+
+          for source in mapping:
+              Path(source).unlink(missing_ok=True)
+          Path('chatgpt-update.ready').unlink(missing_ok=True)
+          PY
+
+      - name: Commit restored app
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update Reading Archive with Aladin search"
+          git push origin chatgpt-v13-temp
