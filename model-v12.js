@@ -7,3 +7,11 @@ window.BOOK_MODEL_DATA = {
   coverInsetX: 0.018,
   coverInsetY: 0.014
 };
+
+window.addEventListener("load", () => {
+  if (document.querySelector('script[data-catalog-v13]')) return;
+  const script = document.createElement("script");
+  script.src = "./catalog-v13.js";
+  script.dataset.catalogV13 = "1";
+  document.body.appendChild(script);
+});
