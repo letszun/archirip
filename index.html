@@ -8,24 +8,61 @@
 
   <style>
     :root{
-      --ink:#111;
-      --muted:#999;
+      --bg:#ffffff;
+      --ink:#111111;
+      --muted:#999999;
       --line:#ececec;
+      --control-bg:rgba(255,255,255,.96);
+      --control-border:#dedede;
+      --control-icon:#444444;
+      --shelf-line:#dddddd;
       --progress-bg:#ededed;
       --progress-neutral:#aeb7bb;
+      --input-placeholder:#b8b8b8;
+      --search-bg:rgba(255,255,255,.84);
+      --soft:#fafafa;
+      --action-bg:#111111;
+      --action-ink:#ffffff;
+      color-scheme:light;
       font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     }
 
+    html[data-theme="dark"]{
+      --bg:#242424;
+      --ink:#eeeeec;
+      --muted:#91918d;
+      --line:#3a3a38;
+      --control-bg:rgba(36,36,36,.94);
+      --control-border:#4b4b48;
+      --control-icon:#d8d8d4;
+      --shelf-line:#484845;
+      --progress-bg:#3b3b39;
+      --progress-neutral:#777d80;
+      --input-placeholder:#73736f;
+      --search-bg:rgba(36,36,36,.88);
+      --soft:#2d2d2b;
+      --action-bg:#eeeeec;
+      --action-ink:#242424;
+      color-scheme:dark;
+    }
+
     *{box-sizing:border-box}
-    html,body{margin:0;width:100%;height:100%;background:#fff;color:var(--ink)}
+    html,body{
+      margin:0;width:100%;height:100%;
+      background:var(--bg);color:var(--ink);
+      transition:background-color .22s ease,color .22s ease;
+    }
     body{overflow:hidden}
     button,input,textarea{font:inherit;color:inherit}
     button{border:0;background:none;padding:0;cursor:pointer}
 
-    #app{position:relative;width:100%;height:100dvh;overflow:hidden;background:#fff}
+    #app{
+      position:relative;width:100%;height:100dvh;overflow:hidden;
+      background:var(--bg);transition:background-color .22s ease;
+    }
 
     .view{
-      position:absolute;inset:0;background:#fff;
+      position:absolute;inset:0;background:var(--bg);
       transition:transform .42s cubic-bezier(.22,.78,.25,1),opacity .22s ease;
       will-change:transform;
     }
@@ -38,7 +75,7 @@
 
     #bookCanvas{
       position:absolute;inset:0;width:100%;height:100%;display:block;
-      background:#fff;touch-action:none;cursor:grab;
+      background:var(--bg);touch-action:none;cursor:grab;
     }
     #bookCanvas.dragging{cursor:grabbing}
 
@@ -76,15 +113,15 @@
       width:28px;
       font-size:9px;
       line-height:1;
-      color:#aaa;
+      color:var(--muted);
       font-variant-numeric:tabular-nums;
       transition:color .28s ease;
     }
 
     .round-nav{
       position:absolute;top:50%;width:40px;height:40px;
-      border:1px solid #dedede;border-radius:50%;
-      transform:translateY(-50%);background:rgba(255,255,255,.96);z-index:30;
+      border:1px solid var(--control-border);border-radius:50%;
+      transform:translateY(-50%);background:var(--control-bg);z-index:30;
       transition:border-color .16s ease,transform .16s ease;
     }
     .round-nav:hover{border-color:#aaa}
@@ -92,7 +129,7 @@
     .round-nav.right{right:clamp(16px,3vw,42px)}
     .round-nav.left{left:clamp(16px,3vw,42px)}
     .round-nav::before,.round-nav::after{
-      content:"";position:absolute;width:8px;height:1px;background:#444;top:50%;left:50%;
+      content:"";position:absolute;width:8px;height:1px;background:var(--control-icon);top:50%;left:50%;
     }
     .round-nav.right::before{transform:translate(-3px,-3px) rotate(45deg)}
     .round-nav.right::after{transform:translate(-3px,2px) rotate(-45deg)}
@@ -101,16 +138,40 @@
 
     .round-plus{
       position:absolute;right:clamp(16px,3vw,42px);bottom:clamp(18px,4vw,42px);
-      width:40px;height:40px;border:1px solid #dedede;border-radius:50%;
-      background:#fff;z-index:32;transition:border-color .16s ease,transform .16s ease;
+      width:40px;height:40px;border:1px solid var(--control-border);border-radius:50%;
+      background:var(--control-bg);z-index:32;transition:border-color .16s ease,transform .16s ease;
     }
     .round-plus:hover{border-color:#aaa}
     .round-plus:active{transform:scale(.94)}
     .round-plus::before,.round-plus::after{
-      content:"";position:absolute;left:50%;top:50%;width:11px;height:1px;background:#444;
+      content:"";position:absolute;left:50%;top:50%;width:11px;height:1px;background:var(--control-icon);
       transform:translate(-50%,-50%);
     }
     .round-plus::after{transform:translate(-50%,-50%) rotate(90deg)}
+
+
+    .theme-toggle{
+      position:fixed;top:clamp(18px,3vw,32px);right:clamp(16px,3vw,42px);
+      width:38px;height:38px;border:1px solid var(--control-border);
+      border-radius:50%;background:var(--control-bg);z-index:45;
+      transition:border-color .16s ease,background-color .22s ease,transform .16s ease;
+    }
+    .theme-toggle:hover{border-color:var(--muted)}
+    .theme-toggle:active{transform:scale(.94)}
+    .theme-toggle::before{
+      content:"";position:absolute;left:50%;top:50%;
+      width:12px;height:12px;border:1px solid var(--control-icon);
+      border-radius:50%;transform:translate(-50%,-50%);
+    }
+    .theme-toggle::after{
+      content:"";position:absolute;left:50%;top:50%;
+      width:6px;height:12px;background:var(--control-icon);
+      border-radius:0 8px 8px 0;transform:translate(0,-50%);
+    }
+    html[data-theme="dark"] .theme-toggle::after{
+      transform:translate(-100%,-50%);
+      border-radius:8px 0 0 8px;
+    }
 
     /* Shelf */
     #shelfView{
@@ -120,11 +181,45 @@
 
     .shelf{
       width:min(720px,100%);min-height:165px;
-      display:flex;align-items:flex-end;justify-content:center;gap:2px;
-      padding:0 10px 8px;border-bottom:1px solid #ddd;
-      overflow-x:auto;scrollbar-width:none;
+      padding:0 10px 8px;border-bottom:1px solid var(--shelf-line);
+      overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+      overscroll-behavior-x:contain;
     }
     .shelf::-webkit-scrollbar{display:none}
+
+    .shelf-track{
+      min-width:100%;width:max-content;min-height:156px;
+      display:flex;align-items:flex-end;justify-content:center;gap:2px;
+    }
+
+    .shelf-search{
+      position:absolute;top:clamp(25px,5vh,48px);left:50%;
+      transform:translateX(-50%);
+      width:min(210px,46vw);height:30px;
+      display:flex;align-items:center;gap:8px;
+      border-bottom:1px solid var(--line);
+      background:var(--search-bg);
+      z-index:25;
+    }
+
+    .shelf-search::before{
+      content:"";width:10px;height:10px;flex:0 0 auto;
+      border:1px solid var(--muted);border-radius:50%;
+      opacity:.75;
+    }
+
+    .shelf-search::after{
+      content:"";position:absolute;left:9px;top:18px;
+      width:5px;height:1px;background:var(--muted);
+      transform:rotate(45deg);transform-origin:left center;opacity:.75;
+    }
+
+    .shelf-search input{
+      min-width:0;flex:1;border:0;outline:0;background:transparent;
+      padding:0 2px;font-size:11px;line-height:30px;
+    }
+
+    .shelf-search input::placeholder{color:var(--input-placeholder)}
 
     .spine{
       position:relative;flex:0 0 auto;height:132px;
@@ -166,7 +261,7 @@
 
     label,.field-label{
       font-size:11px;
-      color:#999;
+      color:var(--muted);
       padding-top:4px;
     }
 
@@ -233,12 +328,12 @@
       justify-self:end;
       width:26px;
       height:26px;
-      border:1px solid #ddd;
+      border:1px solid var(--control-border);
       border-radius:50%;
       position:relative;
       transition:border-color .16s ease;
     }
-    .note-add:hover,.note-add:focus-visible{border-color:#999;outline:none}
+    .note-add:hover,.note-add:focus-visible{border-color:var(--muted);outline:none}
     .note-add::before,.note-add::after{
       content:"";
       position:absolute;
@@ -246,7 +341,7 @@
       height:1px;
       left:50%;
       top:50%;
-      background:#777;
+      background:var(--muted);
       transform:translate(-50%,-50%);
     }
     .note-add::after{transform:translate(-50%,-50%) rotate(90deg)}
@@ -259,12 +354,12 @@
 
     .delete-book{
       font-size:11px;
-      color:#aaa;
+      color:var(--muted);
       padding:8px 0;
       letter-spacing:.01em;
       transition:color .16s ease;
     }
-    .delete-book:hover,.delete-book:focus-visible{color:#222;outline:none}
+    .delete-book:hover,.delete-book:focus-visible{color:var(--ink);outline:none}
 
     /* Add book */
     #addView{overflow:auto;padding:0 20px}
@@ -297,7 +392,7 @@
       display:grid;
       place-items:center;
       border:1px solid #e1e1e1;
-      background:#fafafa;
+      background:var(--soft);
       overflow:hidden;
       cursor:pointer;
       transition:aspect-ratio .18s ease;
@@ -333,14 +428,14 @@
       text-align:center;
       font-size:14px;
     }
-    .book-input::placeholder{color:#b8b8b8}
+    .book-input::placeholder{color:var(--input-placeholder)}
 
     .add-submit{
       width:44px;
       height:44px;
       margin:4px auto 0;
       border-radius:50%;
-      background:#111;
+      background:var(--action-bg);
       position:relative;
     }
     .add-submit::before{
@@ -350,14 +445,14 @@
       top:20px;
       width:8px;
       height:4px;
-      border-left:1.5px solid #fff;
-      border-bottom:1.5px solid #fff;
+      border-left:1.5px solid var(--action-ink);
+      border-bottom:1.5px solid var(--action-ink);
       transform:rotate(-45deg);
     }
 
     .dominant-dot{
       width:10px;height:10px;margin:0 auto;border-radius:50%;
-      background:#ddd;opacity:0;transition:opacity .16s ease;
+      background:var(--control-border);opacity:0;transition:opacity .16s ease;
     }
     .dominant-dot.visible{opacity:1}
 
@@ -370,8 +465,8 @@
       text-align:center;
       font-size:12px;
       line-height:1.7;
-      color:#888;
-      background:#fff;
+      color:var(--muted);
+      background:var(--bg);
       z-index:50;
     }
     #error.show{display:grid}
@@ -385,7 +480,8 @@
       .progress-track{width:128px}
 
       #shelfView{padding-left:54px;padding-right:54px}
-      .shelf{justify-content:flex-start;min-height:148px}
+      .shelf{min-height:148px}
+      .shelf-track{min-height:139px}
 
       .spine{height:116px}
       .spine:nth-child(3n+2){height:111px}
@@ -402,6 +498,8 @@
 
 <body>
 <div id="app">
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 모드 전환"></button>
+
   <section id="singleView" class="view current" aria-label="책 한 권 보기">
     <canvas id="bookCanvas" aria-label="회전 가능한 3D 책"></canvas>
 
@@ -418,7 +516,14 @@
   <section id="shelfView" class="view off-right" aria-label="책장">
     <button id="toSingle" class="round-nav left" type="button" aria-label="한 권 보기로 이동"></button>
     <button id="openAdd" class="round-plus" type="button" aria-label="책 추가"></button>
-    <div id="shelf" class="shelf"></div>
+
+    <label class="shelf-search" aria-label="책 검색">
+      <input id="searchInput" type="search" placeholder="검색" autocomplete="off" />
+    </label>
+
+    <div id="shelf" class="shelf">
+      <div id="shelfTrack" class="shelf-track"></div>
+    </div>
   </section>
 
   <section id="detailView" class="view off-right" aria-label="책 기록">
@@ -426,8 +531,18 @@
       <button id="backDetail" class="round-nav left" type="button" aria-label="뒤로"></button>
 
       <div class="field">
-        <label for="readDate">읽은 날짜</label>
-        <input id="readDate" type="date" />
+        <label for="author">저자</label>
+        <input id="author" type="text" maxlength="120" autocomplete="off" />
+      </div>
+
+      <div class="field">
+        <label for="startDate">시작한 날짜</label>
+        <input id="startDate" type="date" />
+      </div>
+
+      <div class="field">
+        <label for="finishDate">완독 날짜</label>
+        <input id="finishDate" type="date" />
       </div>
 
       <div class="field">
@@ -475,6 +590,9 @@
         <input id="newBookTitle" class="book-input" type="text" maxlength="100"
                placeholder="책 제목" autocomplete="off" />
 
+        <input id="newBookAuthor" class="book-input" type="text" maxlength="120"
+               placeholder="저자" autocomplete="off" />
+
         <input id="newPageCount" class="book-input" type="number" min="1" max="5000"
                inputmode="numeric" placeholder="페이지 수" />
 
@@ -489,8 +607,8 @@
   <div id="error"></div>
 </div>
 
-<script src="./model-v10.js"></script>
-<script src="./cover-v10.js"></script>
-<script src="./app-v10.js"></script>
+<script src="./model-v12.js"></script>
+<script src="./cover-v12.js"></script>
+<script src="./app-v12.js"></script>
 </body>
 </html>
