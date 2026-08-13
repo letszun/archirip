@@ -8,7 +8,7 @@
   <style>
     :root{
       --ink:#111;
-      --muted:#8d8d8d;
+      --muted:#969696;
       --line:#ececec;
       font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     }
@@ -38,8 +38,8 @@
     .round-nav{
       position:absolute;top:50%;width:40px;height:40px;
       border:1px solid #dedede;border-radius:50%;
-      transform:translateY(-50%);background:rgba(255,255,255,.94);z-index:30;
-      transition:border-color .16s ease,transform .16s ease;
+      transform:translateY(-50%);background:rgba(255,255,255,.96);z-index:30;
+      transition:border-color .16s ease,transform .16s ease,background .16s ease;
     }
     .round-nav:hover{border-color:#aaa}
     .round-nav:active{transform:translateY(-50%) scale(.94)}
@@ -53,22 +53,37 @@
     .round-nav.left::before{transform:translate(-5px,-3px) rotate(-45deg)}
     .round-nav.left::after{transform:translate(-5px,2px) rotate(45deg)}
 
-    #shelfView{display:flex;align-items:center;justify-content:center;padding:48px clamp(54px,8vw,110px)}
+    .round-plus{
+      position:absolute;right:clamp(16px,3vw,42px);bottom:clamp(18px,4vw,42px);
+      width:40px;height:40px;border:1px solid #dedede;border-radius:50%;
+      background:#fff;z-index:32;transition:border-color .16s ease,transform .16s ease;
+    }
+    .round-plus:hover{border-color:#aaa}
+    .round-plus:active{transform:scale(.94)}
+    .round-plus::before,.round-plus::after{
+      content:"";position:absolute;left:50%;top:50%;width:11px;height:1px;background:#444;
+      transform:translate(-50%,-50%);
+    }
+    .round-plus::after{transform:translate(-50%,-50%) rotate(90deg)}
+
+    #shelfView{display:flex;align-items:center;justify-content:center;padding:42px clamp(54px,8vw,110px)}
     .shelf{
-      width:min(980px,100%);min-height:360px;display:flex;align-items:flex-end;justify-content:center;
-      gap:3px;padding:0 14px 12px;border-bottom:1px solid #d9d9d9;overflow-x:auto;scrollbar-width:none;
+      width:min(820px,100%);min-height:205px;display:flex;align-items:flex-end;justify-content:center;
+      gap:2px;padding:0 12px 9px;border-bottom:1px solid #d9d9d9;overflow-x:auto;scrollbar-width:none;
     }
     .shelf::-webkit-scrollbar{display:none}
     .spine{
-      position:relative;flex:0 0 auto;width:34px;height:306px;border-radius:2px 2px 0 0;
-      border:1px solid rgba(0,0,0,.08);transition:transform .16s ease;
+      position:relative;flex:0 0 auto;width:21px;height:172px;border-radius:1.5px 1.5px 0 0;
+      border:1px solid rgba(0,0,0,.08);transition:transform .16s ease;overflow:hidden;
     }
-    .spine:hover,.spine:focus-visible{transform:translateY(-7px);outline:none}
+    .spine:nth-child(3n+2){height:164px}
+    .spine:nth-child(3n){height:180px}
+    .spine:hover,.spine:focus-visible{transform:translateY(-5px);outline:none}
     .spine span{
-      position:absolute;top:17px;left:50%;transform:translateX(-50%);
-      writing-mode:vertical-rl;text-orientation:mixed;color:#fff;
-      font-family:Georgia,"Times New Roman",serif;font-size:11px;letter-spacing:.02em;
-      white-space:nowrap;max-height:246px;overflow:hidden;
+      position:absolute;top:12px;left:50%;transform:translateX(-50%);
+      writing-mode:vertical-rl;text-orientation:mixed;
+      font-family:Georgia,"Times New Roman",serif;font-size:8.5px;letter-spacing:.015em;
+      white-space:nowrap;max-height:137px;overflow:hidden;text-overflow:ellipsis;
     }
 
     #detailView{overflow:auto;padding:0 20px}
@@ -81,6 +96,40 @@
     input,textarea{width:100%;border:0;outline:0;background:transparent;padding:0;font-size:14px;line-height:1.75;border-radius:0}
     textarea{min-height:180px;resize:vertical}
 
+    #addView{overflow:auto;padding:0 20px}
+    .add-shell{
+      width:min(390px,100%);min-height:100%;margin:0 auto;padding:clamp(86px,12vh,124px) 0 64px;
+      display:flex;align-items:center;
+    }
+    .add-form{width:100%;display:grid;gap:24px}
+    .add-form .round-nav{position:fixed;top:32px;transform:none}
+    .add-form .round-nav:active{transform:scale(.94)}
+    .cover-picker{
+      position:relative;width:min(210px,58vw);aspect-ratio:143/210;margin:0 auto;
+      display:grid;place-items:center;border:1px solid #e1e1e1;background:#fafafa;overflow:hidden;cursor:pointer;
+    }
+    .cover-picker input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .cover-picker img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+    .cover-picker.has-image img{display:block}
+    .cover-picker::before,.cover-picker::after{
+      content:"";position:absolute;width:18px;height:1px;background:#aaa;left:50%;top:50%;transform:translate(-50%,-50%);
+    }
+    .cover-picker::after{transform:translate(-50%,-50%) rotate(90deg)}
+    .cover-picker.has-image::before,.cover-picker.has-image::after{display:none}
+    .book-title-input{border-bottom:1px solid var(--line);padding:13px 2px 12px;text-align:center;font-size:14px}
+    .book-title-input::placeholder{color:#b8b8b8}
+    .add-submit{
+      width:44px;height:44px;margin:4px auto 0;border-radius:50%;background:#111;position:relative;
+    }
+    .add-submit::before{
+      content:"";position:absolute;left:14px;top:20px;width:8px;height:4px;
+      border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg);
+    }
+    .dominant-dot{
+      width:10px;height:10px;margin:0 auto;border-radius:50%;background:#ddd;opacity:0;transition:opacity .16s ease;
+    }
+    .dominant-dot.visible{opacity:1}
+
     #error{
       display:none;position:absolute;inset:0;place-items:center;padding:32px;
       text-align:center;font-size:12px;line-height:1.7;color:#888;background:#fff;z-index:50;
@@ -88,12 +137,16 @@
     #error.show{display:grid}
 
     @media(max-width:640px){
-      .round-nav{width:38px;height:38px}
+      .round-nav,.round-plus{width:38px;height:38px}
       #shelfView{padding-left:54px;padding-right:54px}
-      .shelf{justify-content:flex-start;min-height:310px}
-      .spine{height:260px}
+      .shelf{justify-content:flex-start;min-height:178px}
+      .spine{width:19px;height:148px}
+      .spine:nth-child(3n+2){height:142px}
+      .spine:nth-child(3n){height:154px}
+      .spine span{font-size:8px;max-height:118px;top:10px}
       .field{grid-template-columns:1fr;gap:9px}
       .detail{padding-top:92px}
+      .add-shell{padding-top:86px}
     }
   </style>
 </head>
@@ -106,6 +159,7 @@
 
   <section id="shelfView" class="view off-right" aria-label="책장">
     <button id="toSingle" class="round-nav left" type="button" aria-label="한 권 보기로 이동"></button>
+    <button id="openAdd" class="round-plus" type="button" aria-label="책 추가"></button>
     <div id="shelf" class="shelf"></div>
   </section>
 
@@ -124,6 +178,21 @@
         <label for="memo">메모</label>
         <textarea id="memo"></textarea>
       </div>
+    </div>
+  </section>
+
+  <section id="addView" class="view off-right" aria-label="책 추가">
+    <div class="add-shell">
+      <form id="addForm" class="add-form">
+        <button id="closeAdd" class="round-nav left" type="button" aria-label="책장으로 돌아가기"></button>
+        <label id="coverPicker" class="cover-picker" aria-label="표지 이미지 선택">
+          <input id="coverUpload" type="file" accept="image/*" required />
+          <img id="coverPreview" alt="선택한 표지 미리보기" />
+        </label>
+        <div id="dominantDot" class="dominant-dot" aria-hidden="true"></div>
+        <input id="newBookTitle" class="book-title-input" type="text" maxlength="100" placeholder="책 제목" autocomplete="off" />
+        <button id="addSubmit" class="add-submit" type="submit" aria-label="책 추가 완료"></button>
+      </form>
     </div>
   </section>
 

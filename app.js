@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "reading-archive-minimal-v4";
+  const STORAGE_KEY = "reading-archive-minimal-v5";
+  const COVER_PARTS = new Set(["frontcover", "spine", "backcover"]);
   const DEFAULT_BOOKS = [{
     id:"gatsby",
     title:"The Great Gatsby",
@@ -9,12 +10,13 @@
     readDate:"",
     oneLine:"",
     memo:"",
-    spineColor:"#0b465f"
+    dominantColor:"#0b465f",
+    coverData:null
   }];
 
   const $ = (s) => document.querySelector(s);
   const canvas = $("#bookCanvas");
-  const ctx = canvas.getContext("2d", { alpha:false });
+  const ctx = canvas?.getContext("2d", { alpha:false });
   const model = window.BOOK_MODEL_DATA;
 
   let books = loadSavedBooks();
@@ -29,12 +31,22 @@
   let frameRequested = false;
   let projectedBounds = null;
   let coverReady = false;
+  let currentCoverSource = "";
+
+  let pendingCoverData = "";
+  let pendingDominantColor = "";
+  let pendingFileName = "";
 
   const coverImage = new Image();
   coverImage.decoding = "async";
-  coverImage.onload = () => { coverReady = true; requestRender(); };
-  coverImage.onerror = () => { coverReady = false; requestRender(); };
-  coverImage.src = window.BOOK_COVER_DATA_URL || "";
+  coverImage.onload = () => {
+    coverReady = true;
+    requestRender();
+  };
+  coverImage.onerror = () => {
+    coverReady = false;
+    requestRender();
+  };
 
   if (!ctx || !model?.meshes || !model?.cover) {
     showError("모델 데이터를 불러오지 못했습니다.");
@@ -43,17 +55,19 @@
 
   initUI();
   resize();
+  loadActiveCover();
   requestRender();
 
-  // On GitHub Pages this replaces the fallback data. On file:// it simply fails silently.
+  // GitHub Pages에서는 JSON 기본값을 읽고, file://에서는 내장 기본값으로 동작합니다.
   if (location.protocol !== "file:") {
     fetch("./books.json", { cache:"no-store" })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         if (!localStorage.getItem(STORAGE_KEY) && Array.isArray(data?.books) && data.books.length) {
-          books = data.books;
+          books = data.books.map(normalizeBook);
           activeBookId = books[0].id;
           buildShelf();
+          loadActiveCover();
         }
       })
       .catch(() => {});
@@ -63,6 +77,10 @@
     $("#toShelf").addEventListener("click", () => showView("shelf"));
     $("#toSingle").addEventListener("click", () => showView("single"));
     $("#backDetail").addEventListener("click", () => showView(previousView));
+    $("#openAdd").addEventListener("click", openAddView);
+    $("#closeAdd").addEventListener("click", () => showView("shelf"));
+    $("#addForm").addEventListener("submit", addBook);
+    $("#coverUpload").addEventListener("change", handleCoverUpload);
 
     ["#readDate", "#oneLine", "#memo"].forEach(sel => {
       $(sel).addEventListener("input", saveDetail);
@@ -126,16 +144,18 @@
       const b = document.createElement("button");
       b.className = "spine";
       b.type = "button";
-      b.style.background = book.spineColor || "#111";
-      b.style.width = `${34 + (i % 3) * 3}px`;
+      b.style.background = book.dominantColor || "#777";
+      b.style.width = `${19 + (i % 4) * 1.5}px`;
       b.setAttribute("aria-label", `${book.title} 열기`);
 
       const title = document.createElement("span");
       title.textContent = book.title;
+      title.style.color = readableTextColor(book.dominantColor || "#777");
       b.appendChild(title);
 
       b.addEventListener("click", () => {
         activeBookId = book.id;
+        loadActiveCover();
         showView("single");
         requestRender();
       });
@@ -148,9 +168,10 @@
     const single = $("#singleView");
     const shelf = $("#shelfView");
     const detail = $("#detailView");
+    const add = $("#addView");
 
     if (name === "detail") {
-      previousView = currentView;
+      previousView = currentView === "detail" ? previousView : currentView;
       populateDetail();
     }
 
@@ -158,18 +179,102 @@
       single.className = "view current";
       shelf.className = "view off-right";
       detail.className = "view off-right";
+      add.className = "view off-right";
       currentView = "single";
       requestRender();
     } else if (name === "shelf") {
       single.className = "view off-left";
       shelf.className = "view current";
       detail.className = "view off-right";
+      add.className = "view off-right";
       currentView = "shelf";
     } else if (name === "detail") {
-      if (currentView === "shelf") shelf.className = "view off-left";
-      else single.className = "view off-left";
+      single.className = "view off-left";
+      shelf.className = currentView === "shelf" ? "view off-left" : "view off-right";
       detail.className = "view current";
+      add.className = "view off-right";
       currentView = "detail";
+    } else if (name === "add") {
+      single.className = "view off-left";
+      shelf.className = "view off-left";
+      detail.className = "view off-right";
+      add.className = "view current";
+      currentView = "add";
+    }
+  }
+
+  function openAddView(){
+    resetAddForm();
+    showView("add");
+  }
+
+  function resetAddForm(){
+    pendingCoverData = "";
+    pendingDominantColor = "";
+    pendingFileName = "";
+    $("#addForm").reset();
+    $("#coverPreview").removeAttribute("src");
+    $("#coverPicker").classList.remove("has-image");
+    $("#dominantDot").classList.remove("visible");
+    $("#dominantDot").style.background = "#ddd";
+  }
+
+  async function handleCoverUpload(event){
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const originalData = await readFileAsDataURL(file);
+      const image = await loadImage(originalData);
+      pendingDominantColor = extractDominantColor(image);
+      pendingCoverData = compressCoverImage(image);
+      pendingFileName = file.name.replace(/\.[^.]+$/, "");
+
+      $("#coverPreview").src = pendingCoverData;
+      $("#coverPicker").classList.add("has-image");
+      $("#dominantDot").style.background = pendingDominantColor;
+      $("#dominantDot").classList.add("visible");
+
+      if (!$("#newBookTitle").value.trim()) {
+        $("#newBookTitle").value = pendingFileName;
+      }
+    } catch (error) {
+      console.error(error);
+      alert("표지 이미지를 읽지 못했습니다.");
+    }
+  }
+
+  function addBook(event){
+    event.preventDefault();
+
+    if (!pendingCoverData) {
+      $("#coverUpload").click();
+      return;
+    }
+
+    const title = $("#newBookTitle").value.trim() || pendingFileName || "Untitled";
+    const book = normalizeBook({
+      id:`book-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+      title,
+      author:"",
+      readDate:"",
+      oneLine:"",
+      memo:"",
+      dominantColor:pendingDominantColor || "#777777",
+      coverData:pendingCoverData
+    });
+
+    books.push(book);
+    activeBookId = book.id;
+
+    const saved = persistBooks();
+    buildShelf();
+    loadActiveCover();
+    resetAddForm();
+    showView("single");
+
+    if (!saved) {
+      alert("책은 추가됐지만 브라우저 저장 공간이 부족해 새로고침 후에는 사라질 수 있습니다.");
     }
   }
 
@@ -187,19 +292,61 @@
     b.readDate = $("#readDate").value;
     b.oneLine = $("#oneLine").value;
     b.memo = $("#memo").value;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({books})); } catch (_) {}
+    persistBooks();
   }
 
   function getBook(){
     return books.find(b => b.id === activeBookId) || books[0];
   }
 
+  function normalizeBook(book){
+    return {
+      id:String(book?.id || `book-${Date.now()}`),
+      title:String(book?.title || "Untitled"),
+      author:String(book?.author || ""),
+      readDate:String(book?.readDate || ""),
+      oneLine:String(book?.oneLine || ""),
+      memo:String(book?.memo || ""),
+      dominantColor:String(book?.dominantColor || book?.spineColor || "#777777"),
+      coverData:book?.coverData || null
+    };
+  }
+
   function loadSavedBooks(){
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (Array.isArray(saved?.books) && saved.books.length) return saved.books;
+      if (Array.isArray(saved?.books) && saved.books.length) return saved.books.map(normalizeBook);
     } catch (_) {}
-    return DEFAULT_BOOKS.map(b => ({...b}));
+    return DEFAULT_BOOKS.map(normalizeBook);
+  }
+
+  function persistBooks(){
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({books}));
+      return true;
+    } catch (error) {
+      console.warn("Could not persist books", error);
+      return false;
+    }
+  }
+
+  function loadActiveCover(){
+    const book = getBook();
+    const src = book?.coverData || window.BOOK_COVER_DATA_URL || "";
+    coverReady = false;
+    currentCoverSource = src;
+
+    if (!src) {
+      coverImage.removeAttribute("src");
+      requestRender();
+      return;
+    }
+
+    coverImage.src = src;
+    if (coverImage.complete && coverImage.naturalWidth > 0) {
+      coverReady = true;
+    }
+    requestRender();
   }
 
   function resize(){
@@ -235,10 +382,15 @@
     const camera = makeCamera(w,h);
     const triangles = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const active = getBook();
+    const dominant = active?.dominantColor || "#777777";
 
     for (const mesh of model.meshes) {
       const transformed = mesh.vertices.map(v => transformVertex(v, camera));
-      const base = hexToRgb(mesh.color || "#ececec");
+      const baseHex = COVER_PARTS.has(mesh.name.toLowerCase()) ? dominant : (mesh.color || "#ececec");
+      const base = hexToRgb(baseHex);
+      const meshLight = getMeshLight(mesh.name, camera);
+      const color = rgbCss(base.map(v => clamp(v * meshLight, 0, 255)));
 
       for (const face of mesh.faces) {
         const a = transformed[face[0]];
@@ -251,12 +403,10 @@
         maxX = Math.max(maxX,a.sx,b.sx,c.sx);
         maxY = Math.max(maxY,a.sy,b.sy,c.sy);
 
-        const n = faceNormal3(a.world,b.world,c.world);
-        const light = clamp(0.76 + 0.24 * Math.abs(dot3(n, normalize3([-0.35,0.7,1]))), 0.64, 1.04);
         triangles.push({
           pts:[a,b,c],
           z:(a.world[2]+b.world[2]+c.world[2])/3,
-          color:rgbCss(base.map(v => clamp(v*light,0,255)))
+          color
         });
       }
     }
@@ -266,10 +416,13 @@
     ctx.lineJoin = "round";
     for (const tri of triangles) {
       const [a,b,c] = tri.pts;
+      const e0 = expandPoint([a.sx,a.sy],[b.sx,b.sy],[c.sx,c.sy],0.58);
+      const e1 = expandPoint([b.sx,b.sy],[a.sx,a.sy],[c.sx,c.sy],0.58);
+      const e2 = expandPoint([c.sx,c.sy],[a.sx,a.sy],[b.sx,b.sy],0.58);
       ctx.beginPath();
-      ctx.moveTo(a.sx,a.sy);
-      ctx.lineTo(b.sx,b.sy);
-      ctx.lineTo(c.sx,c.sy);
+      ctx.moveTo(e0[0],e0[1]);
+      ctx.lineTo(e1[0],e1[1]);
+      ctx.lineTo(e2[0],e2[1]);
       ctx.closePath();
       ctx.fillStyle = tri.color;
       ctx.fill();
@@ -285,11 +438,33 @@
         maxX = Math.max(maxX,p.sx); maxY = Math.max(maxY,p.sy);
       }
 
-      if (coverReady) drawProjectiveCover(coverWorld,camera);
-      else drawCoverFallback(coverWorld);
+      if (coverReady && coverImage.src === currentCoverSource) drawProjectiveCover(coverWorld,camera);
+      else drawCoverFallback(coverWorld, dominant);
     }
 
     if (Number.isFinite(minX)) projectedBounds = {minX,minY,maxX,maxY};
+  }
+
+  function getMeshLight(name, camera){
+    const key = String(name || "").toLowerCase();
+    if (key === "pages") return 0.985;
+
+    let n;
+    if (key === "spine") n = [-1,0,0];
+    else if (key === "backcover") n = [0,0,-1];
+    else n = [0,0,1];
+
+    const rn = rotateNormal(n, camera);
+    const lightDir = normalize3([-0.25,0.58,1]);
+    return clamp(0.86 + 0.14 * Math.abs(dot3(rn, lightDir)), 0.86, 1.0);
+  }
+
+  function rotateNormal(n, cam){
+    const x1 = cam.cyaw*n[0] + cam.syaw*n[2];
+    const z1 = -cam.syaw*n[0] + cam.cyaw*n[2];
+    const y2 = cam.cpitch*n[1] - cam.spitch*z1;
+    const z2 = cam.spitch*n[1] + cam.cpitch*z1;
+    return normalize3([x1,y2,z2]);
   }
 
   function makeCamera(w,h){
@@ -307,11 +482,9 @@
   function transformVertex(v,cam){
     const x0 = v[0], y0 = v[1], z0 = v[2];
 
-    // Y rotation.
     const x1 = cam.cyaw*x0 + cam.syaw*z0;
     const z1 = -cam.syaw*x0 + cam.cyaw*z0;
 
-    // X rotation.
     const y2 = cam.cpitch*y0 - cam.spitch*z1;
     const z2 = cam.spitch*y0 + cam.cpitch*z1;
 
@@ -325,26 +498,26 @@
     };
   }
 
-  function drawCoverFallback(quad){
+  function drawCoverFallback(quad, color){
     ctx.beginPath();
     ctx.moveTo(quad[0].sx,quad[0].sy);
     for (let i=1;i<4;i++) ctx.lineTo(quad[i].sx,quad[i].sy);
     ctx.closePath();
-    ctx.fillStyle = "#0b465f";
+    ctx.fillStyle = color || "#777";
     ctx.fill();
   }
 
   function drawProjectiveCover(quad, camera){
-    const cols = 14;
-    const rows = 20;
+    const cols = 16;
+    const rows = 24;
     const iw = coverImage.naturalWidth || coverImage.width;
     const ih = coverImage.naturalHeight || coverImage.height;
     if (!iw || !ih) return;
 
-    const p00 = model.cover.vertices[0]; // bottom-left
-    const p10 = model.cover.vertices[1]; // bottom-right
-    const p11 = model.cover.vertices[2]; // top-right
-    const p01 = model.cover.vertices[3]; // top-left
+    const p00 = model.cover.vertices[0];
+    const p10 = model.cover.vertices[1];
+    const p11 = model.cover.vertices[2];
+    const p01 = model.cover.vertices[3];
 
     for (let j=0;j<rows;j++) {
       const v0 = j/rows;
@@ -358,7 +531,6 @@
         const q11 = transformVertex(bilinear3(p00,p10,p11,p01,u1,v1),camera);
         const q01 = transformVertex(bilinear3(p00,p10,p11,p01,u0,v1),camera);
 
-        // UV v=0 is the bottom of the cover; image y=0 is the top.
         const s00 = [u0*iw,(1-v0)*ih];
         const s10 = [u1*iw,(1-v0)*ih];
         const s11 = [u1*iw,(1-v1)*ih];
@@ -370,13 +542,13 @@
     }
 
     const normal = faceNormal3(quad[0].world,quad[1].world,quad[2].world);
-    const light = clamp(0.88 + 0.12 * dot3(normalize3(normal), normalize3([-0.25,0.55,1])), 0.76, 1.03);
+    const light = clamp(0.9 + 0.10 * dot3(normalize3(normal), normalize3([-0.25,0.55,1])), 0.8, 1.02);
     if (light < 0.995) {
       ctx.beginPath();
       ctx.moveTo(quad[0].sx,quad[0].sy);
       for (let i=1;i<4;i++) ctx.lineTo(quad[i].sx,quad[i].sy);
       ctx.closePath();
-      ctx.fillStyle = `rgba(0,0,0,${clamp((1-light)*0.8,0,0.16)})`;
+      ctx.fillStyle = `rgba(0,0,0,${clamp((1-light)*0.72,0,0.14)})`;
       ctx.fill();
     }
   }
@@ -385,9 +557,9 @@
     const m = affineFromTriangles(s0,s1,s2,d0,d1,d2);
     if (!m) return;
 
-    const e0 = expandPoint(d0,d1,d2,0.7);
-    const e1 = expandPoint(d1,d0,d2,0.7);
-    const e2 = expandPoint(d2,d0,d1,0.7);
+    const e0 = expandPoint(d0,d1,d2,0.85);
+    const e1 = expandPoint(d1,d0,d2,0.85);
+    const e2 = expandPoint(d2,d0,d1,0.85);
 
     ctx.save();
     ctx.beginPath();
@@ -441,6 +613,90 @@
            y >= projectedBounds.minY-pad && y <= projectedBounds.maxY+pad;
   }
 
+  function readFileAsDataURL(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImage(src){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function compressCoverImage(image){
+    const maxSide = 720;
+    const ratio = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    const w = Math.max(1, Math.round((image.naturalWidth || image.width) * ratio));
+    const h = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const cctx = c.getContext("2d", { alpha:false });
+    cctx.fillStyle = "#fff";
+    cctx.fillRect(0,0,w,h);
+    cctx.imageSmoothingEnabled = true;
+    cctx.imageSmoothingQuality = "high";
+    cctx.drawImage(image,0,0,w,h);
+    return c.toDataURL("image/jpeg",0.82);
+  }
+
+  function extractDominantColor(image){
+    const size = 72;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const cctx = c.getContext("2d", { willReadFrequently:true });
+    cctx.drawImage(image,0,0,size,size);
+    const data = cctx.getImageData(0,0,size,size).data;
+    const bins = new Map();
+
+    for (let i=0;i<data.length;i+=4) {
+      if (data[i+3] < 180) continue;
+      const r=data[i], g=data[i+1], b=data[i+2];
+      const max=Math.max(r,g,b), min=Math.min(r,g,b);
+      const sat = max === 0 ? 0 : (max-min)/max;
+      const lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+
+      // 아주 밝은 종이/테두리는 실제 표지색보다 우세해지는 경우가 많아 가중치를 줄입니다.
+      const extremePenalty = lum > 0.94 ? 0.2 : (lum < 0.035 ? 0.55 : 1);
+      const weight = extremePenalty * (0.82 + sat * 0.38);
+      const qr = Math.round(r/24)*24;
+      const qg = Math.round(g/24)*24;
+      const qb = Math.round(b/24)*24;
+      const key = `${qr},${qg},${qb}`;
+      const entry = bins.get(key) || {score:0,count:0,r:0,g:0,b:0};
+      entry.score += weight;
+      entry.count += 1;
+      entry.r += r;
+      entry.g += g;
+      entry.b += b;
+      bins.set(key,entry);
+    }
+
+    let best = null;
+    for (const entry of bins.values()) {
+      if (!best || entry.score > best.score) best = entry;
+    }
+    if (!best || !best.count) return "#777777";
+
+    const rgb = [best.r/best.count, best.g/best.count, best.b/best.count].map(Math.round);
+    return rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }
+
+  function readableTextColor(hex){
+    const [r,g,b] = hexToRgb(hex);
+    const lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+    return lum > 0.62 ? "#111" : "#fff";
+  }
+
   function faceNormal3(a,b,c){
     const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
     const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
@@ -462,7 +718,12 @@
     let s = (hex || "#eee").replace("#","");
     if (s.length === 3) s = s.split("").map(c => c+c).join("");
     const n = parseInt(s,16);
+    if (!Number.isFinite(n)) return [119,119,119];
     return [(n>>16)&255,(n>>8)&255,n&255];
+  }
+
+  function rgbToHex(r,g,b){
+    return `#${[r,g,b].map(v => clamp(Math.round(v),0,255).toString(16).padStart(2,"0")).join("")}`;
   }
 
   function rgbCss(v){ return `rgb(${Math.round(v[0])},${Math.round(v[1])},${Math.round(v[2])})`; }
