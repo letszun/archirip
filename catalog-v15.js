@@ -197,63 +197,80 @@
     render(items);
   }
 
-  async function searchAladin(query, key){
-    const params = new URLSearchParams({
-      ttbkey:key,
-      Query:query,
-      QueryType:"Keyword",
-      MaxResults:"15",
-      start:"1",
-      SearchTarget:"Book",
-      output:"js",
-      Version:"20131101",
-      Cover:"Big"
-    });
+  function searchAladin(query, key){
+    return new Promise((resolve, reject) => {
+      const callbackName = `__readingArchiveAladin_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      const script = document.createElement("script");
+      let settled = false;
 
-    const res = await fetch(`${ALADIN_SEARCH_URL}?${params.toString()}`, {
-      mode:"cors",
-      credentials:"omit",
-      cache:"no-store"
-    });
-
-    if (!res.ok) throw new Error(`Aladin HTTP ${res.status}`);
-
-    const data = parseAladinResponse(await res.text());
-    const items = Array.isArray(data?.item) ? data.item : [];
-
-    return items.map((item) => {
-      const isbn13 = String(item.isbn13 || item.isbn || "").trim();
-      const pageCount = Number(item?.subInfo?.itemPage || item?.itemPage || 0);
-
-      return {
-        title: tidyTitle(item.title),
-        author: String(item.author || "").trim(),
-        publisher: String(item.publisher || "").trim(),
-        isbn13,
-        pageCount,
-        cover: secure(item.cover || ""),
-        sourceUrl: String(item.link || "").trim(),
-        sourceType:"aladin",
-        sourceId:isbn13 || String(item.itemId || "").trim(),
-        sourceLabel:"알라딘"
+      const cleanup = () => {
+        if (script.parentNode) script.parentNode.removeChild(script);
+        try { delete window[callbackName]; }
+        catch (_) { window[callbackName] = undefined; }
       };
+
+      const finish = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        fn(value);
+      };
+
+      window[callbackName] = (first, second) => {
+        const hasTwoArgs = typeof second !== "undefined";
+        const success = hasTwoArgs ? first !== false : true;
+        const data = hasTwoArgs ? second : first;
+
+        if (!success) {
+          finish(reject, new Error("Aladin API returned failure"));
+          return;
+        }
+
+        const items = Array.isArray(data?.item) ? data.item : [];
+
+        finish(resolve, items.map((item) => {
+          const isbn13 = String(item.isbn13 || item.isbn || "").trim();
+          const pageCount = Number(item?.subInfo?.itemPage || item?.itemPage || 0);
+
+          return {
+            title: tidyTitle(item.title),
+            author: String(item.author || "").trim(),
+            publisher: String(item.publisher || "").trim(),
+            isbn13,
+            pageCount,
+            cover: secure(item.cover || ""),
+            sourceUrl: String(item.link || "").trim(),
+            sourceType:"aladin",
+            sourceId:isbn13 || String(item.itemId || "").trim(),
+            sourceLabel:"알라딘"
+          };
+        }));
+      };
+
+      const params = new URLSearchParams({
+        ttbkey:key,
+        Query:query,
+        QueryType:"Keyword",
+        MaxResults:"15",
+        start:"1",
+        SearchTarget:"Book",
+        output:"js",
+        Version:"20131101",
+        Cover:"Big",
+        CallBack:callbackName
+      });
+
+      script.async = true;
+      script.src = `${ALADIN_SEARCH_URL}?${params.toString()}`;
+      script.onerror = () => finish(reject, new Error("Aladin JSONP script failed"));
+
+      const timer = setTimeout(() => {
+        finish(reject, new Error("Aladin JSONP timeout"));
+      }, 12000);
+
+      document.head.appendChild(script);
     });
-  }
-
-  function parseAladinResponse(text){
-    const clean = String(text || "").replace(/^\uFEFF/, "").trim();
-
-    try { return JSON.parse(clean); }
-    catch (_) {}
-
-    const start = clean.indexOf("{");
-    const end = clean.lastIndexOf("}");
-
-    if (start >= 0 && end > start) {
-      return JSON.parse(clean.slice(start, end + 1));
-    }
-
-    throw new Error("Unexpected Aladin response");
   }
 
   async function searchOpenLibrary(query, preferKorean){
