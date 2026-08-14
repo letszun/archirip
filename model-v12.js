@@ -16,10 +16,10 @@ window.addEventListener("load", () => {
     document.body.appendChild(script);
   }
 
-  if (!document.querySelector('script[data-settings-v20]')) {
+  if (!document.querySelector('script[data-settings-v21]')) {
     const settings = document.createElement("script");
-    settings.src = "./settings-v20.js?v=20";
-    settings.dataset.settingsV20 = "1";
+    settings.src = "./settings-v21.js?v=21";
+    settings.dataset.settingsV21 = "1";
     document.body.appendChild(settings);
   }
 
