@@ -9,17 +9,10 @@ window.BOOK_MODEL_DATA = {
 };
 
 window.addEventListener("load", () => {
-  if (!document.querySelector('script[data-catalog-v18]')) {
-    const script = document.createElement("script");
-    script.src = "./catalog-v18.js";
-    script.dataset.catalogV18 = "1";
-    document.body.appendChild(script);
-  }
-
-  if (!document.querySelector('script[data-settings-v21]')) {
+  if (!document.querySelector('script[data-settings-v22]')) {
     const settings = document.createElement("script");
-    settings.src = "./settings-v21.js?v=21";
-    settings.dataset.settingsV21 = "1";
+    settings.src = "./settings-v22.js?v=22";
+    settings.dataset.settingsV22 = "1";
     document.body.appendChild(settings);
   }
 
@@ -28,5 +21,12 @@ window.addEventListener("load", () => {
     zoom.src = "./zoom-v20.js?v=20";
     zoom.dataset.zoomV20 = "1";
     document.body.appendChild(zoom);
+  }
+
+  if (!document.querySelector('script[data-state-v22]')) {
+    const state = document.createElement("script");
+    state.src = "./state-v22.js?v=22";
+    state.dataset.stateV22 = "1";
+    document.body.appendChild(state);
   }
 });
