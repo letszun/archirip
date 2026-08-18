@@ -9,10 +9,10 @@ window.BOOK_MODEL_DATA = {
 };
 
 window.addEventListener("load", () => {
-  if (!document.querySelector('script[data-settings-v22]')) {
+  if (!document.querySelector('script[data-settings-v23]')) {
     const settings = document.createElement("script");
-    settings.src = "./settings-v22.js?v=22";
-    settings.dataset.settingsV22 = "1";
+    settings.src = "./settings-v23.js?v=23";
+    settings.dataset.settingsV23 = "1";
     document.body.appendChild(settings);
   }
 
@@ -28,5 +28,12 @@ window.addEventListener("load", () => {
     state.src = "./state-v22.js?v=22";
     state.dataset.stateV22 = "1";
     document.body.appendChild(state);
+  }
+
+  if (!document.querySelector('script[data-isbn-v23]')) {
+    const isbn = document.createElement("script");
+    isbn.src = "./isbn-v23.js?v=23";
+    isbn.dataset.isbnV23 = "1";
+    document.body.appendChild(isbn);
   }
 });
