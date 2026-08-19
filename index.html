@@ -1,615 +1,570 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#ffffff" />
-  <title>Reading Archive</title>
-
-  <style>
-    :root{
-      --bg:#ffffff;
-      --ink:#111111;
-      --muted:#999999;
-      --line:#ececec;
-      --control-bg:rgba(255,255,255,.96);
-      --control-border:#dedede;
-      --control-icon:#444444;
-      --shelf-line:#dddddd;
-      --progress-bg:#ededed;
-      --progress-neutral:#aeb7bb;
-      --input-placeholder:#b8b8b8;
-      --search-bg:rgba(255,255,255,.84);
-      --soft:#fafafa;
-      --action-bg:#111111;
-      --action-ink:#ffffff;
-      color-scheme:light;
-      font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    }
-
-    html[data-theme="dark"]{
-      --bg:#242424;
-      --ink:#eeeeec;
-      --muted:#91918d;
-      --line:#3a3a38;
-      --control-bg:rgba(36,36,36,.94);
-      --control-border:#4b4b48;
-      --control-icon:#d8d8d4;
-      --shelf-line:#484845;
-      --progress-bg:#3b3b39;
-      --progress-neutral:#777d80;
-      --input-placeholder:#73736f;
-      --search-bg:rgba(36,36,36,.88);
-      --soft:#2d2d2b;
-      --action-bg:#eeeeec;
-      --action-ink:#242424;
-      color-scheme:dark;
-    }
-
-    *{box-sizing:border-box}
-    html,body{
-      margin:0;width:100%;height:100%;
-      background:var(--bg);color:var(--ink);
-      transition:background-color .22s ease,color .22s ease;
-    }
-    body{overflow:hidden}
-    button,input,textarea{font:inherit;color:inherit}
-    button{border:0;background:none;padding:0;cursor:pointer}
-
-    #app{
-      position:relative;width:100%;height:100dvh;overflow:hidden;
-      background:var(--bg);transition:background-color .22s ease;
-    }
-
-    .view{
-      position:absolute;inset:0;background:var(--bg);
-      transition:transform .42s cubic-bezier(.22,.78,.25,1),opacity .22s ease;
-      will-change:transform;
-    }
-    .view.off-left{transform:translateX(-100%);pointer-events:none}
-    .view.off-right{transform:translateX(100%);pointer-events:none}
-    .view.current{transform:translateX(0);pointer-events:auto}
-
-    /* Single book */
-    #singleView{display:grid;place-items:center}
-
-    #bookCanvas{
-      position:absolute;inset:0;width:100%;height:100%;display:block;
-      background:var(--bg);touch-action:none;cursor:grab;
-    }
-    #bookCanvas.dragging{cursor:grabbing}
-
-    .progress-wrap{
-      position:absolute;
-      left:50%;
-      bottom:clamp(34px,7.5vh,76px);
-      transform:translateX(-50%);
-      display:flex;
-      align-items:center;
-      gap:8px;
-      z-index:12;
-      pointer-events:none;
-      transition:opacity .18s ease;
-    }
-    .progress-wrap.hidden{opacity:0}
-
-    .progress-track{
-      width:142px;
-      height:8px;
-      background:var(--progress-bg);
-      border-radius:999px;
-      overflow:hidden;
-    }
-
-    .progress-fill{
-      width:0%;
-      height:100%;
-      border-radius:inherit;
-      background:var(--progress-neutral);
-      transition:width .24s ease,background-color .28s ease;
-    }
-
-    .progress-value{
-      width:28px;
-      font-size:9px;
-      line-height:1;
-      color:var(--muted);
-      font-variant-numeric:tabular-nums;
-      transition:color .28s ease;
-    }
-
-    .round-nav{
-      position:absolute;top:50%;width:40px;height:40px;
-      border:1px solid var(--control-border);border-radius:50%;
-      transform:translateY(-50%);background:var(--control-bg);z-index:30;
-      transition:border-color .16s ease,transform .16s ease;
-    }
-    .round-nav:hover{border-color:#aaa}
-    .round-nav:active{transform:translateY(-50%) scale(.94)}
-    .round-nav.right{right:clamp(16px,3vw,42px)}
-    .round-nav.left{left:clamp(16px,3vw,42px)}
-    .round-nav::before,.round-nav::after{
-      content:"";position:absolute;width:8px;height:1px;background:var(--control-icon);top:50%;left:50%;
-    }
-    .round-nav.right::before{transform:translate(-3px,-3px) rotate(45deg)}
-    .round-nav.right::after{transform:translate(-3px,2px) rotate(-45deg)}
-    .round-nav.left::before{transform:translate(-5px,-3px) rotate(-45deg)}
-    .round-nav.left::after{transform:translate(-5px,2px) rotate(45deg)}
-
-    .round-plus{
-      position:absolute;right:clamp(16px,3vw,42px);bottom:clamp(18px,4vw,42px);
-      width:40px;height:40px;border:1px solid var(--control-border);border-radius:50%;
-      background:var(--control-bg);z-index:32;transition:border-color .16s ease,transform .16s ease;
-    }
-    .round-plus:hover{border-color:#aaa}
-    .round-plus:active{transform:scale(.94)}
-    .round-plus::before,.round-plus::after{
-      content:"";position:absolute;left:50%;top:50%;width:11px;height:1px;background:var(--control-icon);
-      transform:translate(-50%,-50%);
-    }
-    .round-plus::after{transform:translate(-50%,-50%) rotate(90deg)}
-
-
-    .theme-toggle{
-      position:fixed;top:clamp(18px,3vw,32px);right:clamp(16px,3vw,42px);
-      width:38px;height:38px;border:1px solid var(--control-border);
-      border-radius:50%;background:var(--control-bg);z-index:45;
-      transition:border-color .16s ease,background-color .22s ease,transform .16s ease;
-    }
-    .theme-toggle:hover{border-color:var(--muted)}
-    .theme-toggle:active{transform:scale(.94)}
-    .theme-toggle::before{
-      content:"";position:absolute;left:50%;top:50%;
-      width:12px;height:12px;border:1px solid var(--control-icon);
-      border-radius:50%;transform:translate(-50%,-50%);
-    }
-    .theme-toggle::after{
-      content:"";position:absolute;left:50%;top:50%;
-      width:6px;height:12px;background:var(--control-icon);
-      border-radius:0 8px 8px 0;transform:translate(0,-50%);
-    }
-    html[data-theme="dark"] .theme-toggle::after{
-      transform:translate(-100%,-50%);
-      border-radius:8px 0 0 8px;
-    }
-
-    /* Shelf */
-    #shelfView{
-      display:flex;align-items:center;justify-content:center;
-      padding:36px clamp(54px,8vw,110px);
-    }
-
-    .shelf{
-      width:min(720px,100%);min-height:165px;
-      padding:0 10px 8px;border-bottom:1px solid var(--shelf-line);
-      overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
-      overscroll-behavior-x:contain;
-    }
-    .shelf::-webkit-scrollbar{display:none}
-
-    .shelf-track{
-      min-width:100%;width:max-content;min-height:156px;
-      display:flex;align-items:flex-end;justify-content:center;gap:2px;
-    }
-
-    .shelf-search{
-      position:absolute;top:clamp(25px,5vh,48px);left:50%;
-      transform:translateX(-50%);
-      width:min(210px,46vw);height:30px;
-      display:flex;align-items:center;gap:8px;
-      border-bottom:1px solid var(--line);
-      background:var(--search-bg);
-      z-index:25;
-    }
-
-    .shelf-search::before{
-      content:"";width:10px;height:10px;flex:0 0 auto;
-      border:1px solid var(--muted);border-radius:50%;
-      opacity:.75;
-    }
-
-    .shelf-search::after{
-      content:"";position:absolute;left:9px;top:18px;
-      width:5px;height:1px;background:var(--muted);
-      transform:rotate(45deg);transform-origin:left center;opacity:.75;
-    }
-
-    .shelf-search input{
-      min-width:0;flex:1;border:0;outline:0;background:transparent;
-      padding:0 2px;font-size:11px;line-height:30px;
-    }
-
-    .shelf-search input::placeholder{color:var(--input-placeholder)}
-
-    .spine{
-      position:relative;flex:0 0 auto;height:132px;
-      border-radius:1px 1px 0 0;border:1px solid rgba(0,0,0,.07);
-      transition:transform .16s ease;overflow:hidden;
-    }
-    .spine:nth-child(3n+2){height:126px}
-    .spine:nth-child(3n){height:138px}
-    .spine:hover,.spine:focus-visible{transform:translateY(-4px);outline:none}
-
-    .spine span{
-      position:absolute;top:10px;left:50%;transform:translateX(-50%);
-      writing-mode:vertical-rl;text-orientation:mixed;
-      font-family:Georgia,"Times New Roman",serif;font-size:7.5px;letter-spacing:.01em;
-      white-space:nowrap;max-height:108px;overflow:hidden;text-overflow:ellipsis;
-    }
-
-    /* Detail */
-    #detailView{overflow:auto;padding:0 20px}
-    .detail{
-      width:min(640px,100%);
-      margin:0 auto;
-      padding:clamp(76px,12vh,124px) 0 90px;
-    }
-
-    .detail .round-nav{
-      position:fixed;top:32px;transform:none;
-    }
-    .detail .round-nav:active{transform:scale(.94)}
-
-    .field{
-      display:grid;
-      grid-template-columns:108px 1fr;
-      gap:24px;
-      padding:23px 0;
-      border-top:1px solid var(--line);
-    }
-    .field:last-of-type{border-bottom:1px solid var(--line)}
-
-    label,.field-label{
-      font-size:11px;
-      color:var(--muted);
-      padding-top:4px;
-    }
-
-    input,textarea{
-      width:100%;
-      border:0;
-      outline:0;
-      background:transparent;
-      padding:0;
-      font-size:14px;
-      line-height:1.75;
-      border-radius:0;
-    }
-
-    input[type="number"]{-moz-appearance:textfield}
-    input[type="number"]::-webkit-inner-spin-button,
-    input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
-
-    .notes-panel{display:grid;gap:10px}
-
-    .note-list{
-      display:grid;
-      gap:0;
-    }
-
-    .note-item{
-      position:relative;
-      padding:0 26px 14px 0;
-      margin-bottom:14px;
-      border-bottom:1px solid #f0f0f0;
-    }
-    .note-item:last-child{margin-bottom:0}
-
-    .note-text{
-      display:block;
-      min-height:48px;
-      resize:vertical;
-      overflow:hidden;
-    }
-
-    .note-delete{
-      position:absolute;
-      top:2px;
-      right:0;
-      width:18px;
-      height:18px;
-      color:#bbb;
-      font-size:16px;
-      line-height:16px;
-      text-align:center;
-      transition:color .15s ease;
-    }
-    .note-delete:hover,.note-delete:focus-visible{color:#333;outline:none}
-
-    .note-empty{
-      display:none;
-      padding:1px 0 9px;
-      color:#bbb;
-      font-size:11px;
-    }
-    .note-empty.visible{display:block}
-
-    .note-add{
-      justify-self:end;
-      width:26px;
-      height:26px;
-      border:1px solid var(--control-border);
-      border-radius:50%;
-      position:relative;
-      transition:border-color .16s ease;
-    }
-    .note-add:hover,.note-add:focus-visible{border-color:var(--muted);outline:none}
-    .note-add::before,.note-add::after{
-      content:"";
-      position:absolute;
-      width:8px;
-      height:1px;
-      left:50%;
-      top:50%;
-      background:var(--muted);
-      transform:translate(-50%,-50%);
-    }
-    .note-add::after{transform:translate(-50%,-50%) rotate(90deg)}
-
-    .detail-actions{
-      display:flex;
-      justify-content:flex-end;
-      padding-top:18px;
-    }
-
-    .delete-book{
-      font-size:11px;
-      color:var(--muted);
-      padding:8px 0;
-      letter-spacing:.01em;
-      transition:color .16s ease;
-    }
-    .delete-book:hover,.delete-book:focus-visible{color:var(--ink);outline:none}
-
-    /* Add book */
-    #addView{overflow:auto;padding:0 20px}
-
-    .add-shell{
-      width:min(390px,100%);
-      min-height:100%;
-      margin:0 auto;
-      padding:clamp(76px,11vh,112px) 0 54px;
-      display:flex;
-      align-items:center;
-    }
-
-    .add-form{
-      width:100%;
-      display:grid;
-      gap:20px;
-    }
-
-    .add-form .round-nav{
-      position:fixed;top:32px;transform:none;
-    }
-    .add-form .round-nav:active{transform:scale(.94)}
-
-    .cover-picker{
-      position:relative;
-      width:min(190px,54vw);
-      aspect-ratio:143/210;
-      margin:0 auto;
-      display:grid;
-      place-items:center;
-      border:1px solid #e1e1e1;
-      background:var(--soft);
-      overflow:hidden;
-      cursor:pointer;
-      transition:aspect-ratio .18s ease;
-    }
-
-    .cover-picker input{
-      position:absolute;inset:0;opacity:0;cursor:pointer;
-    }
-
-    .cover-picker img{
-      position:absolute;inset:0;width:100%;height:100%;
-      object-fit:cover;display:none;
-    }
-
-    .cover-picker.has-image img{display:block}
-
-    .cover-picker::before,.cover-picker::after{
-      content:"";
-      position:absolute;
-      width:18px;
-      height:1px;
-      background:#aaa;
-      left:50%;
-      top:50%;
-      transform:translate(-50%,-50%);
-    }
-    .cover-picker::after{transform:translate(-50%,-50%) rotate(90deg)}
-    .cover-picker.has-image::before,.cover-picker.has-image::after{display:none}
-
-    .book-input{
-      border-bottom:1px solid var(--line);
-      padding:12px 2px 11px;
-      text-align:center;
-      font-size:14px;
-    }
-    .book-input::placeholder{color:var(--input-placeholder)}
-
-    .add-submit{
-      width:44px;
-      height:44px;
-      margin:4px auto 0;
-      border-radius:50%;
-      background:var(--action-bg);
-      position:relative;
-    }
-    .add-submit::before{
-      content:"";
-      position:absolute;
-      left:14px;
-      top:20px;
-      width:8px;
-      height:4px;
-      border-left:1.5px solid var(--action-ink);
-      border-bottom:1.5px solid var(--action-ink);
-      transform:rotate(-45deg);
-    }
-
-    .dominant-dot{
-      width:10px;height:10px;margin:0 auto;border-radius:50%;
-      background:var(--control-border);opacity:0;transition:opacity .16s ease;
-    }
-    .dominant-dot.visible{opacity:1}
-
-    #error{
-      display:none;
-      position:absolute;
-      inset:0;
-      place-items:center;
-      padding:32px;
-      text-align:center;
-      font-size:12px;
-      line-height:1.7;
-      color:var(--muted);
-      background:var(--bg);
-      z-index:50;
-    }
-    #error.show{display:grid}
-
-    @media(max-width:640px){
-      .round-nav,.round-plus{width:38px;height:38px}
-
-      .progress-wrap{
-        bottom:clamp(28px,5.5vh,52px);
-      }
-      .progress-track{width:128px}
-
-      #shelfView{padding-left:54px;padding-right:54px}
-      .shelf{min-height:148px}
-      .shelf-track{min-height:139px}
-
-      .spine{height:116px}
-      .spine:nth-child(3n+2){height:111px}
-      .spine:nth-child(3n){height:121px}
-      .spine span{font-size:7px;max-height:94px;top:9px}
-
-      .field{grid-template-columns:1fr;gap:9px}
-      .detail{padding-top:92px}
-
-      .add-shell{padding-top:82px}
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Reading Archive</title>
+<style>
+:root{
+--bg:#ffffff;
+--ink:#111111;
+--muted:#999999;
+--line:#ececec;
+--control-bg:rgba(255,255,255,.96);
+--control-border:#dedede;
+--control-icon:#444444;
+--shelf-line:#dddddd;
+--progress-bg:#ededed;
+--progress-neutral:#aeb7bb;
+--input-placeholder:#b8b8b8;
+--search-bg:rgba(255,255,255,.84);
+--soft:#fafafa;
+--action-bg:#111111;
+--action-ink:#ffffff;
+color-scheme:light;
+font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+html[data-theme="dark"]{
+--bg:#242424;
+--ink:#eeeeec;
+--muted:#91918d;
+--line:#3a3a38;
+--control-bg:rgba(36,36,36,.94);
+--control-border:#4b4b48;
+--control-icon:#d8d8d4;
+--shelf-line:#484845;
+--progress-bg:#3b3b39;
+--progress-neutral:#777d80;
+--input-placeholder:#73736f;
+--search-bg:rgba(36,36,36,.88);
+--soft:#2d2d2b;
+--action-bg:#eeeeec;
+--action-ink:#242424;
+color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{
+margin:0;width:100%;height:100%;
+background:var(--bg);color:var(--ink);
+transition:background-color .22s ease,color .22s ease;
+}
+body{overflow:hidden}
+button,input,textarea{font:inherit;color:inherit}
+button{border:0;background:none;padding:0;cursor:pointer}
+#app{
+position:relative;width:100%;height:100dvh;overflow:hidden;
+background:var(--bg);transition:background-color .22s ease;
+}
+.view{
+position:absolute;inset:0;background:var(--bg);
+transition:transform .42s cubic-bezier(.22,.78,.25,1),opacity .22s ease;
+will-change:transform;
+}
+.view.off-left{transform:translateX(-100%);pointer-events:none}
+.view.off-right{transform:translateX(100%);pointer-events:none}
+.view.current{transform:translateX(0);pointer-events:auto}
+#singleView{display:grid;place-items:center}
+#bookCanvas{
+position:absolute;inset:0;width:100%;height:100%;display:block;
+background:var(--bg);touch-action:none;cursor:grab;
+}
+#bookCanvas.dragging{cursor:grabbing}
+.progress-wrap{
+position:absolute;
+left:50%;
+bottom:clamp(34px,7.5vh,76px);
+transform:translateX(-50%);
+display:flex;
+align-items:center;
+gap:8px;
+z-index:12;
+pointer-events:none;
+transition:opacity .18s ease;
+}
+.progress-wrap.hidden{opacity:0}
+.progress-track{
+width:142px;
+height:8px;
+background:var(--progress-bg);
+border-radius:999px;
+overflow:hidden;
+}
+.progress-fill{
+width:0%;
+height:100%;
+border-radius:inherit;
+background:var(--progress-neutral);
+transition:width .24s ease,background-color .28s ease;
+}
+.progress-value{
+width:28px;
+font-size:9px;
+line-height:1;
+color:var(--muted);
+font-variant-numeric:tabular-nums;
+transition:color .28s ease;
+}
+.round-nav{
+position:absolute;top:50%;width:40px;height:40px;
+border:1px solid var(--control-border);border-radius:50%;
+transform:translateY(-50%);background:var(--control-bg);z-index:30;
+transition:border-color .16s ease,transform .16s ease;
+}
+.round-nav:hover{border-color:#aaa}
+.round-nav:active{transform:translateY(-50%) scale(.94)}
+.round-nav.right{right:clamp(16px,3vw,42px)}
+.round-nav.left{left:clamp(16px,3vw,42px)}
+.round-nav::before,.round-nav::after{
+content:"";position:absolute;width:8px;height:1px;background:var(--control-icon);top:50%;left:50%;
+}
+.round-nav.right::before{transform:translate(-3px,-3px) rotate(45deg)}
+.round-nav.right::after{transform:translate(-3px,2px) rotate(-45deg)}
+.round-nav.left::before{transform:translate(-5px,-3px) rotate(-45deg)}
+.round-nav.left::after{transform:translate(-5px,2px) rotate(45deg)}
+.round-plus{
+position:absolute;right:clamp(16px,3vw,42px);bottom:clamp(18px,4vw,42px);
+width:40px;height:40px;border:1px solid var(--control-border);border-radius:50%;
+background:var(--control-bg);z-index:32;transition:border-color .16s ease,transform .16s ease;
+}
+.round-plus:hover{border-color:#aaa}
+.round-plus:active{transform:scale(.94)}
+.round-plus::before,.round-plus::after{
+content:"";position:absolute;left:50%;top:50%;width:11px;height:1px;background:var(--control-icon);
+transform:translate(-50%,-50%);
+}
+.round-plus::after{transform:translate(-50%,-50%) rotate(90deg)}
+.theme-toggle{
+position:fixed;top:clamp(18px,3vw,32px);right:clamp(16px,3vw,42px);
+width:38px;height:38px;border:1px solid var(--control-border);
+border-radius:50%;background:var(--control-bg);z-index:45;
+transition:border-color .16s ease,background-color .22s ease,transform .16s ease;
+}
+.theme-toggle:hover{border-color:var(--muted)}
+.theme-toggle:active{transform:scale(.94)}
+.theme-toggle::before{
+content:"";position:absolute;left:50%;top:50%;
+width:12px;height:12px;border:1px solid var(--control-icon);
+border-radius:50%;transform:translate(-50%,-50%);
+}
+.theme-toggle::after{
+content:"";position:absolute;left:50%;top:50%;
+width:6px;height:12px;background:var(--control-icon);
+border-radius:0 8px 8px 0;transform:translate(0,-50%);
+}
+html[data-theme="dark"] .theme-toggle::after{
+transform:translate(-100%,-50%);
+border-radius:8px 0 0 8px;
+}
+#shelfView{
+display:flex;align-items:center;justify-content:center;
+padding:36px clamp(54px,8vw,110px);
+}
+.shelf{
+width:min(720px,100%);min-height:165px;
+padding:0 10px 8px;border-bottom:1px solid var(--shelf-line);
+overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+overscroll-behavior-x:contain;
+}
+.shelf::-webkit-scrollbar{display:none}
+.shelf-track{
+min-width:100%;width:max-content;min-height:156px;
+display:flex;align-items:flex-end;justify-content:center;gap:2px;
+}
+.shelf-search{
+position:absolute;top:clamp(25px,5vh,48px);left:50%;
+transform:translateX(-50%);
+width:min(210px,46vw);height:30px;
+display:flex;align-items:center;gap:8px;
+border-bottom:1px solid var(--line);
+background:var(--search-bg);
+z-index:25;
+}
+.shelf-search::before{
+content:"";width:10px;height:10px;flex:0 0 auto;
+border:1px solid var(--muted);border-radius:50%;
+opacity:.75;
+}
+.shelf-search::after{
+content:"";position:absolute;left:9px;top:18px;
+width:5px;height:1px;background:var(--muted);
+transform:rotate(45deg);transform-origin:left center;opacity:.75;
+}
+.shelf-search input{
+min-width:0;flex:1;border:0;outline:0;background:transparent;
+padding:0 2px;font-size:11px;line-height:30px;
+}
+.shelf-search input::placeholder{color:var(--input-placeholder)}
+.spine{
+position:relative;flex:0 0 auto;height:132px;
+border-radius:1px 1px 0 0;border:1px solid rgba(0,0,0,.07);
+transition:transform .16s ease;overflow:hidden;
+}
+.spine:nth-child(3n+2){height:126px}
+.spine:nth-child(3n){height:138px}
+.spine:hover,.spine:focus-visible{transform:translateY(-4px);outline:none}
+.spine span{
+position:absolute;top:10px;left:50%;transform:translateX(-50%);
+writing-mode:vertical-rl;text-orientation:mixed;
+font-family:Georgia,"Times New Roman",serif;font-size:7.5px;letter-spacing:.01em;
+white-space:nowrap;max-height:108px;overflow:hidden;text-overflow:ellipsis;
+}
+#detailView{overflow:auto;padding:0 20px}
+.detail{
+width:min(640px,100%);
+margin:0 auto;
+padding:clamp(76px,12vh,124px) 0 90px;
+}
+.detail .round-nav{
+position:fixed;top:32px;transform:none;
+}
+.detail .round-nav:active{transform:scale(.94)}
+.field{
+display:grid;
+grid-template-columns:108px 1fr;
+gap:24px;
+padding:23px 0;
+border-top:1px solid var(--line);
+}
+.field:last-of-type{border-bottom:1px solid var(--line)}
+label,.field-label{
+font-size:11px;
+color:var(--muted);
+padding-top:4px;
+}
+input,textarea{
+width:100%;
+border:0;
+outline:0;
+background:transparent;
+padding:0;
+font-size:14px;
+line-height:1.75;
+border-radius:0;
+}
+input[type="number"]{-moz-appearance:textfield}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.notes-panel{display:grid;gap:10px}
+.note-list{
+display:grid;
+gap:0;
+}
+.note-item{
+position:relative;
+padding:0 26px 14px 0;
+margin-bottom:14px;
+border-bottom:1px solid #f0f0f0;
+}
+.note-item:last-child{margin-bottom:0}
+.note-text{
+display:block;
+min-height:48px;
+resize:vertical;
+overflow:hidden;
+}
+.note-delete{
+position:absolute;
+top:2px;
+right:0;
+width:18px;
+height:18px;
+color:#bbb;
+font-size:16px;
+line-height:16px;
+text-align:center;
+transition:color .15s ease;
+}
+.note-delete:hover,.note-delete:focus-visible{color:#333;outline:none}
+.note-empty{
+display:none;
+padding:1px 0 9px;
+color:#bbb;
+font-size:11px;
+}
+.note-empty.visible{display:block}
+.note-add{
+justify-self:end;
+width:26px;
+height:26px;
+border:1px solid var(--control-border);
+border-radius:50%;
+position:relative;
+transition:border-color .16s ease;
+}
+.note-add:hover,.note-add:focus-visible{border-color:var(--muted);outline:none}
+.note-add::before,.note-add::after{
+content:"";
+position:absolute;
+width:8px;
+height:1px;
+left:50%;
+top:50%;
+background:var(--muted);
+transform:translate(-50%,-50%);
+}
+.note-add::after{transform:translate(-50%,-50%) rotate(90deg)}
+.detail-actions{
+display:flex;
+justify-content:flex-end;
+padding-top:18px;
+}
+.delete-book{
+font-size:11px;
+color:var(--muted);
+padding:8px 0;
+letter-spacing:.01em;
+transition:color .16s ease;
+}
+.delete-book:hover,.delete-book:focus-visible{color:var(--ink);outline:none}
+#addView{overflow:auto;padding:0 20px}
+.add-shell{
+width:min(390px,100%);
+min-height:100%;
+margin:0 auto;
+padding:clamp(76px,11vh,112px) 0 54px;
+display:flex;
+align-items:center;
+}
+.add-form{
+width:100%;
+display:grid;
+gap:20px;
+}
+.isbn-box{
+display:grid;
+gap:8px;
+margin-bottom:2px;
+}
+.isbn-row,.isbn-key-row{
+display:flex;
+align-items:center;
+gap:9px;
+border-bottom:1px solid var(--line);
+}
+.isbn-row input,.isbn-key-row input{
+flex:1;
+min-width:0;
+padding:10px 2px 9px;
+text-align:center;
+font-size:13px;
+}
+.isbn-row button,.isbn-key-row button{
+flex:0 0 auto;
+padding:8px 2px 8px 8px;
+font-size:9px;
+color:var(--muted);
+white-space:nowrap;
+}
+.isbn-key-row.hidden{display:none}
+.isbn-status{
+min-height:14px;
+text-align:center;
+font-size:9px;
+line-height:1.5;
+color:var(--muted);
+}
+.isbn-status.ok{color:var(--ink)}
+.add-form .round-nav{
+position:fixed;top:32px;transform:none;
+}
+.add-form .round-nav:active{transform:scale(.94)}
+.cover-picker{
+position:relative;
+width:min(190px,54vw);
+aspect-ratio:143/210;
+margin:0 auto;
+display:grid;
+place-items:center;
+border:1px solid #e1e1e1;
+background:var(--soft);
+overflow:hidden;
+cursor:pointer;
+transition:aspect-ratio .18s ease;
+}
+.cover-picker input{
+position:absolute;inset:0;opacity:0;cursor:pointer;
+}
+.cover-picker img{
+position:absolute;inset:0;width:100%;height:100%;
+object-fit:cover;display:none;
+}
+.cover-picker.has-image img{display:block}
+.cover-picker::before,.cover-picker::after{
+content:"";
+position:absolute;
+width:18px;
+height:1px;
+background:#aaa;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+}
+.cover-picker::after{transform:translate(-50%,-50%) rotate(90deg)}
+.cover-picker.has-image::before,.cover-picker.has-image::after{display:none}
+.book-input{
+border-bottom:1px solid var(--line);
+padding:12px 2px 11px;
+text-align:center;
+font-size:14px;
+}
+.book-input::placeholder{color:var(--input-placeholder)}
+.add-submit{
+width:44px;
+height:44px;
+margin:4px auto 0;
+border-radius:50%;
+background:var(--action-bg);
+position:relative;
+}
+.add-submit::before{
+content:"";
+position:absolute;
+left:14px;
+top:20px;
+width:8px;
+height:4px;
+border-left:1.5px solid var(--action-ink);
+border-bottom:1.5px solid var(--action-ink);
+transform:rotate(-45deg);
+}
+.dominant-dot{
+width:10px;height:10px;margin:0 auto;border-radius:50%;
+background:var(--control-border);opacity:0;transition:opacity .16s ease;
+}
+.dominant-dot.visible{opacity:1}
+#error{
+display:none;
+position:absolute;
+inset:0;
+place-items:center;
+padding:32px;
+text-align:center;
+font-size:12px;
+line-height:1.7;
+color:var(--muted);
+background:var(--bg);
+z-index:50;
+}
+#error.show{display:grid}
+@media(max-width:640px){
+.round-nav,.round-plus{width:38px;height:38px}
+.progress-wrap{
+bottom:clamp(28px,5.5vh,52px);
+}
+.progress-track{width:128px}
+#shelfView{padding-left:54px;padding-right:54px}
+.shelf{min-height:148px}
+.shelf-track{min-height:139px}
+.spine{height:116px}
+.spine:nth-child(3n+2){height:111px}
+.spine:nth-child(3n){height:121px}
+.spine span{font-size:7px;max-height:94px;top:9px}
+.field{grid-template-columns:1fr;gap:9px}
+.detail{padding-top:92px}
+.add-shell{padding-top:82px}
+}
+</style>
 </head>
-
 <body>
 <div id="app">
-  <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 모드 전환"></button>
-
-  <section id="singleView" class="view current" aria-label="책 한 권 보기">
-    <canvas id="bookCanvas" aria-label="회전 가능한 3D 책"></canvas>
-
-    <div id="progressWrap" class="progress-wrap" aria-label="독서 진행률">
-      <div class="progress-track">
-        <div id="progressFill" class="progress-fill"></div>
-      </div>
-      <div id="progressValue" class="progress-value">0%</div>
-    </div>
-
-    <button id="toShelf" class="round-nav right" type="button" aria-label="책장으로 이동"></button>
-  </section>
-
-  <section id="shelfView" class="view off-right" aria-label="책장">
-    <button id="toSingle" class="round-nav left" type="button" aria-label="한 권 보기로 이동"></button>
-    <button id="openAdd" class="round-plus" type="button" aria-label="책 추가"></button>
-
-    <label class="shelf-search" aria-label="책 검색">
-      <input id="searchInput" type="search" placeholder="검색" autocomplete="off" />
-    </label>
-
-    <div id="shelf" class="shelf">
-      <div id="shelfTrack" class="shelf-track"></div>
-    </div>
-  </section>
-
-  <section id="detailView" class="view off-right" aria-label="책 기록">
-    <div class="detail">
-      <button id="backDetail" class="round-nav left" type="button" aria-label="뒤로"></button>
-
-      <div class="field">
-        <label for="author">저자</label>
-        <input id="author" type="text" maxlength="120" autocomplete="off" />
-      </div>
-
-      <div class="field">
-        <label for="startDate">시작한 날짜</label>
-        <input id="startDate" type="date" />
-      </div>
-
-      <div class="field">
-        <label for="finishDate">완독 날짜</label>
-        <input id="finishDate" type="date" />
-      </div>
-
-      <div class="field">
-        <label for="pageCount">페이지 수</label>
-        <input id="pageCount" type="number" min="1" max="5000" inputmode="numeric" />
-      </div>
-
-      <div class="field">
-        <label for="currentPage">읽은 페이지</label>
-        <input id="currentPage" type="number" min="0" max="5000" inputmode="numeric" />
-      </div>
-
-      <div class="field">
-        <label for="oneLine">한 줄 평</label>
-        <input id="oneLine" type="text" maxlength="120" />
-      </div>
-
-      <div class="field">
-        <div class="field-label">문장 · 생각</div>
-        <div class="notes-panel">
-          <div id="noteEmpty" class="note-empty">남겨두고 싶은 문장이나 생각을 추가하세요.</div>
-          <div id="noteList" class="note-list"></div>
-          <button id="addNote" class="note-add" type="button" aria-label="문장 또는 생각 추가"></button>
-        </div>
-      </div>
-
-      <div class="detail-actions">
-        <button id="deleteBook" class="delete-book" type="button">삭제</button>
-      </div>
-    </div>
-  </section>
-
-  <section id="addView" class="view off-right" aria-label="책 추가">
-    <div class="add-shell">
-      <form id="addForm" class="add-form">
-        <button id="closeAdd" class="round-nav left" type="button" aria-label="책장으로 돌아가기"></button>
-
-        <label id="coverPicker" class="cover-picker" aria-label="표지 이미지 선택">
-          <input id="coverUpload" type="file" accept="image/*" required />
-          <img id="coverPreview" alt="선택한 표지 미리보기" />
-        </label>
-
-        <div id="dominantDot" class="dominant-dot" aria-hidden="true"></div>
-
-        <input id="newBookTitle" class="book-input" type="text" maxlength="100"
-               placeholder="책 제목" autocomplete="off" />
-
-        <input id="newBookAuthor" class="book-input" type="text" maxlength="120"
-               placeholder="저자" autocomplete="off" />
-
-        <input id="newPageCount" class="book-input" type="number" min="1" max="5000"
-               inputmode="numeric" placeholder="페이지 수" />
-
-        <input id="newCurrentPage" class="book-input" type="number" min="0" max="5000"
-               inputmode="numeric" placeholder="읽은 페이지 · 선택" />
-
-        <button id="addSubmit" class="add-submit" type="submit" aria-label="책 추가 완료"></button>
-      </form>
-    </div>
-  </section>
-
-  <div id="error"></div>
+<button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 모드 전환"></button>
+<section id="singleView" class="view current" aria-label="책 한 권 보기">
+<canvas id="bookCanvas" aria-label="회전 가능한 3D 책"></canvas>
+<div id="progressWrap" class="progress-wrap" aria-label="독서 진행률">
+<div class="progress-track">
+<div id="progressFill" class="progress-fill"></div>
 </div>
-
-<script src="./model-v12.js?v=23"></script>
-<script src="./cover-v12.js"></script>
-<script src="./app-v12.js"></script>
-<script src="./isbn-v23.js?v=23" data-isbn-v23="1"></script>
+<div id="progressValue" class="progress-value">0%</div>
+</div>
+<button id="toShelf" class="round-nav right" type="button" aria-label="책장으로 이동"></button>
+</section>
+<section id="shelfView" class="view off-right" aria-label="책장">
+<button id="toSingle" class="round-nav left" type="button" aria-label="한 권 보기로 이동"></button>
+<button id="openAdd" class="round-plus" type="button" aria-label="책 추가"></button>
+<label class="shelf-search" aria-label="책 검색">
+<input id="searchInput" type="search" placeholder="검색" autocomplete="off" />
+</label>
+<div id="shelf" class="shelf">
+<div id="shelfTrack" class="shelf-track"></div>
+</div>
+</section>
+<section id="detailView" class="view off-right" aria-label="책 기록">
+<div class="detail">
+<button id="backDetail" class="round-nav left" type="button" aria-label="뒤로"></button>
+<div class="field">
+<label for="author">저자</label>
+<input id="author" type="text" maxlength="120" autocomplete="off" />
+</div>
+<div class="field">
+<label for="startDate">시작한 날짜</label>
+<input id="startDate" type="date" />
+</div>
+<div class="field">
+<label for="finishDate">완독 날짜</label>
+<input id="finishDate" type="date" />
+</div>
+<div class="field">
+<label for="pageCount">페이지 수</label>
+<input id="pageCount" type="number" min="1" max="5000" inputmode="numeric" />
+</div>
+<div class="field">
+<label for="currentPage">읽은 페이지</label>
+<input id="currentPage" type="number" min="0" max="5000" inputmode="numeric" />
+</div>
+<div class="field">
+<label for="oneLine">한 줄 평</label>
+<input id="oneLine" type="text" maxlength="120" />
+</div>
+<div class="field">
+<div class="field-label">문장 · 생각</div>
+<div class="notes-panel">
+<div id="noteEmpty" class="note-empty">남겨두고 싶은 문장이나 생각을 추가하세요.</div>
+<div id="noteList" class="note-list"></div>
+<button id="addNote" class="note-add" type="button" aria-label="문장 또는 생각 추가"></button>
+</div>
+</div>
+<div class="detail-actions">
+<button id="deleteBook" class="delete-book" type="button">삭제</button>
+</div>
+</div>
+</section>
+<section id="addView" class="view off-right" aria-label="책 추가">
+<div class="add-shell">
+<form id="addForm" class="add-form">
+<button id="closeAdd" class="round-nav left" type="button" aria-label="책장으로 돌아가기"></button>
+<div id="isbnBox" class="isbn-box">
+<div class="isbn-row">
+<input id="isbnLookupInput" type="text" inputmode="numeric" autocomplete="off" maxlength="17" placeholder="ISBN 13자리" aria-label="ISBN 13자리" />
+<button id="isbnLookupButton" type="button">불러오기</button>
+</div>
+<div id="isbnKeyRow" class="isbn-key-row hidden">
+<input id="isbnKeyInput" type="password" autocomplete="off" placeholder="알라딘 TTB KEY" aria-label="알라딘 TTB KEY" />
+<button id="isbnKeySave" type="button">키 저장</button>
+</div>
+<div id="isbnLookupStatus" class="isbn-status" aria-live="polite"></div>
+</div>
+<label id="coverPicker" class="cover-picker" aria-label="표지 이미지 선택">
+<input id="coverUpload" type="file" accept="image/*" required />
+<img id="coverPreview" alt="선택한 표지 미리보기" />
+</label>
+<div id="dominantDot" class="dominant-dot" aria-hidden="true"></div>
+<input id="newBookTitle" class="book-input" type="text" maxlength="100" placeholder="책 제목" autocomplete="off" />
+<input id="newBookAuthor" class="book-input" type="text" maxlength="120" placeholder="저자" autocomplete="off" />
+<input id="newPageCount" class="book-input" type="number" min="1" max="5000" inputmode="numeric" placeholder="페이지 수" />
+<input id="newCurrentPage" class="book-input" type="number" min="0" max="5000" inputmode="numeric" placeholder="읽은 페이지 · 선택" />
+<button id="addSubmit" class="add-submit" type="submit" aria-label="책 추가 완료"></button>
+</form>
+</div>
+</section>
+<div id="error"></div>
+</div>
+<script src="./model-v12.js?v=24"></script>
+<script src="./cover-v12.js?v=12"></script>
+<script src="./app-v12.js?v=24"></script>
+<script src="./settings-v24.js?v=24"></script>
+<script src="./zoom-v20.js?v=20"></script>
+<script src="./state-v22.js?v=22"></script>
+<script src="./isbn-v24.js?v=24"></script>
 </body>
 </html>
